@@ -445,7 +445,7 @@ private:
 		void UpdateFractionDone();
 		bool OutgroupRoot(Individual *ind, int indnum);
 		void LoadNexusStartingConditions();
-		void VariableStartingTreeOptimization(bool reducing);
+		void VariableStartingTreeOptimization();
 		void OptimizeSiteRates();
 
 		int IsError() const { return error; }

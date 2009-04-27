@@ -24,25 +24,16 @@
 //a bunch of functions from the Tree class, relating to optimization
 
 #include "utility.h"
-
-#ifdef CUDA_GPU
-#include "cudaman.h"
-#endif
-
 Profiler ProfIntDeriv ("IntDeriv      ");
 Profiler ProfTermDeriv("TermDeriv     ");
 Profiler ProfModDeriv ("ModDeriv      ");
 Profiler ProfNewton   ("Newton-Raphson");
 extern Profiler ProfEQVectors;
-
+				   
 
 extern FLOAT_TYPE globalBest;
 
 extern int optCalcs;
-
-#ifdef CUDA_GPU
-extern CudaManager *cudaman;
-#endif
 
 #define FOURTH_ROOT
 
@@ -77,7 +68,7 @@ inline FLOAT_TYPE CallBranchLike(TreeNode *thisnode, Tree *thistree, FLOAT_TYPE 
 	thisnode->dlen=blen;
 #endif
 	FLOAT_TYPE like=thistree->BranchLike(thisnode)*-1;
-
+	
 	optCalcs++;
 
 #ifdef OPT_DEBUG
@@ -93,7 +84,7 @@ void Tree::OptimizeBranchesInArray(int *nodes, int numNodes, FLOAT_TYPE optPreci
 	//this takes an array of nodeNums (branches) to be optimized and does so
 	for(int i=0;i<numNodes;i++){
 		BrentOptimizeBranchLength(optPrecision, allNodes[nodes[i]], true);
-		}
+		}	
 	}
 
 FLOAT_TYPE Tree::OptimizeAllBranches(FLOAT_TYPE optPrecision){
@@ -107,7 +98,7 @@ FLOAT_TYPE Tree::OptimizeAllBranches(FLOAT_TYPE optPrecision){
 	}
 
 FLOAT_TYPE Tree::OptimizeTreeScale(FLOAT_TYPE optPrecision){
-	if(FloatingPointEquals(lnL, -ONE_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0))) Score();
+	if(FloatingPointEquals(lnL, -ONE_POINT_ZERO, 1e-8)) Score();
 	Score();
 	FLOAT_TYPE start=lnL;
 	FLOAT_TYPE prev=lnL;
@@ -130,14 +121,14 @@ FLOAT_TYPE Tree::OptimizeTreeScale(FLOAT_TYPE optPrecision){
 		ScaleWholeTree(scale);
 		Score();
 		deb << scale << "\t" << lnL << endl;
-		ScaleWholeTree(ONE_POINT_ZERO/scale);
+		ScaleWholeTree(ONE_POINT_ZERO/scale);	
 		}
 	deb.close();
 #endif
 
 	while(1){
-		//reversed this now so the reduction in scale is done first when getting the
-		//derivs.  This works better if some blens are at DEF_MAX_BLEN because the
+		//reversed this now so the reduction in scale is done first when getting the 
+		//derivs.  This works better if some blens are at DEF_MAX_BLEN because the 
 		//scaling up causes them to hit the max and the relative blens to change
 
 #ifdef SINGLE_PRECISION_FLOATS
@@ -151,7 +142,7 @@ FLOAT_TYPE Tree::OptimizeTreeScale(FLOAT_TYPE optPrecision){
 		ScaleWholeTree(scale);
 		Score();
 		cur=lnL;
-		ScaleWholeTree(ONE_POINT_ZERO/scale);//return the tree to its original scale
+		ScaleWholeTree(ONE_POINT_ZERO/scale);//return the tree to its original scale	
 		FLOAT_TYPE d12=(cur-prev)/-incr;
 
 		scale=ONE_POINT_ZERO + incr;
@@ -163,16 +154,16 @@ FLOAT_TYPE Tree::OptimizeTreeScale(FLOAT_TYPE optPrecision){
 
 		FLOAT_TYPE d1=(d11+d12)*ZERO_POINT_FIVE;
 		FLOAT_TYPE d2=(d11-d12)/incr;
-
+		
 		FLOAT_TYPE est = -d1/d2;
 		FLOAT_TYPE estImprove = d1*est + d2*(est*est*ZERO_POINT_FIVE);
 
-		//return conditions.  Leave if the estimated improvement is < precision of if the points straddle the optimum
+		//return conditions.  Leave if the estimated improvement is < precision of if the points straddle the optimum 
 		if((d11 - d12) == ZERO_POINT_ZERO || (d11 > ZERO_POINT_ZERO && d12 < ZERO_POINT_ZERO) || (d11 < ZERO_POINT_ZERO && d12 > ZERO_POINT_ZERO) || (estImprove < optPrecision && d2 < ZERO_POINT_ZERO)){
 			lnL = prev;
 			return prev-start;
 			}
-
+		
 		if(d2 < ZERO_POINT_ZERO){
 			est = max(min((FLOAT_TYPE)0.1, est), (FLOAT_TYPE)-0.1);
 			t=ONE_POINT_ZERO + est;
@@ -189,7 +180,7 @@ FLOAT_TYPE Tree::OptimizeTreeScale(FLOAT_TYPE optPrecision){
 				else t=(FLOAT_TYPE)0.95;
 				}
 			}
-
+		
 		//update the brackets
 		if(d1 <= ZERO_POINT_ZERO && effectiveScale < upperBracket)
 			upperBracket = effectiveScale;
@@ -233,16 +224,16 @@ FLOAT_TYPE Tree::OptimizeAlpha(FLOAT_TYPE optPrecision){
 	deb.close();
 	mod->SetAlpha(initVal, false);
 	MakeAllNodesDirty();
-	Score();
+	Score();	
 #endif
 
-	if(FloatingPointEquals(lnL, -ONE_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0))) Score();
+	if(FloatingPointEquals(lnL, -ONE_POINT_ZERO, 1e-8)) Score();
 	FLOAT_TYPE start, prev, cur;
 	prev = start = cur = lnL;
 	FLOAT_TYPE prevVal=mod->Alpha();
 	FLOAT_TYPE lastChange=(FLOAT_TYPE)9999.9;
-	FLOAT_TYPE upperBracket = FLT_MAX;   //the smallest value we know of with a negative d1
-	FLOAT_TYPE lowerBracket = FLT_MIN;   //the largest value we know of with a positive d1
+	FLOAT_TYPE upperBracket = FLT_MAX;   //the smallest value we know of with a negative d1 
+	FLOAT_TYPE lowerBracket = FLT_MIN;   //the largest value we know of with a positive d1 
 	FLOAT_TYPE incr;
 
 	while(1){
@@ -252,31 +243,31 @@ FLOAT_TYPE Tree::OptimizeAlpha(FLOAT_TYPE optPrecision){
 		incr=0.001;
 #endif
 		mod->SetAlpha(prevVal+incr, false);
-
+		
 		MakeAllNodesDirty();
 		Score();
 		cur=lnL;
 		FLOAT_TYPE d11=(cur-prev)/incr;
-
+		
 		mod->SetAlpha(prevVal-incr, false);
 		MakeAllNodesDirty();
 		Score();
 		cur=lnL;
 		FLOAT_TYPE d12=(cur-prev)/-incr;
-
+		
 		FLOAT_TYPE d1=(d11+d12)*ZERO_POINT_FIVE;
 		FLOAT_TYPE d2=(d11-d12)/incr;
-
+		
 		FLOAT_TYPE est=-d1/d2;
 		FLOAT_TYPE estImprove = d1*est + d2*(est*est*ZERO_POINT_FIVE);
-
+		
 		if(estImprove < optPrecision && d2 <= ZERO_POINT_ZERO){
 			mod->SetAlpha(prevVal, false);
 			MakeAllNodesDirty();
 			lnL = prev;
 			return prev-start;
 			}
-
+		
 		FLOAT_TYPE t;
 		if(d2 < ZERO_POINT_ZERO){
 			t=prevVal+est;
@@ -288,7 +279,7 @@ FLOAT_TYPE Tree::OptimizeAlpha(FLOAT_TYPE optPrecision){
 			if(d1 > ZERO_POINT_ZERO) t=prevVal*(FLOAT_TYPE)1.25;
 			else t=prevVal*(FLOAT_TYPE)0.8;
 			}
-
+		
 		//update the brackets
 		if(d1 <= ZERO_POINT_ZERO && prevVal < upperBracket)
 			upperBracket = prevVal;
@@ -306,7 +297,7 @@ FLOAT_TYPE Tree::OptimizeAlpha(FLOAT_TYPE optPrecision){
 
 		mod->SetAlpha(t, false);
 		//assert((prevVal==0.05 && mod->Alpha()==0.05)==false);
-		MakeAllNodesDirty();
+		MakeAllNodesDirty();			
 		Score();
 		lastChange = lnL - prev;
 		prev=lnL;
@@ -333,7 +324,7 @@ FLOAT_TYPE Tree::OptimizeBoundedParameter(FLOAT_TYPE optPrecision, FLOAT_TYPE pr
 		MakeAllNodesDirty();
 		}
 
-	if(FloatingPointEquals(lnL, -ONE_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0))) Score();
+	if(FloatingPointEquals(lnL, -ONE_POINT_ZERO, 1e-8)) Score();
 	FLOAT_TYPE start, prev, cur;
 	prev = start = cur = lnL;
 	FLOAT_TYPE lastChange=(FLOAT_TYPE)9999.9;
@@ -345,16 +336,10 @@ FLOAT_TYPE Tree::OptimizeBoundedParameter(FLOAT_TYPE optPrecision, FLOAT_TYPE pr
 	int positiveD2Num = 0;
 	int pass = 0;
 
-#ifdef OPT_BOUNDED_LTRACE
-	ofstream curves("omega.log", ios::app);
-	curves.precision(12);
-
-/*	ofstream curves("lcurve.log", ios::app);
-	curves.precision(12);
+/*	ofstream curves("lcurve.log");
+	curves.precision(8);
 	curves << endl;
-//DEBUG
-//	for(double c = max(prevVal - 0.01, lowBound); c < min(1.5, highBound) ; c += 0.001){
-/*	for(double c = prevVal - 0.00025; c < prevVal + 0.00026 ; c += 0.00001){
+	for(double c = max(prevVal - 0.01, lowBound); c < min(prevVal + 0.01, highBound) ; c += 0.001){
 		CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, c);
 		MakeAllNodesDirty();
 		Score();
@@ -366,134 +351,70 @@ FLOAT_TYPE Tree::OptimizeBoundedParameter(FLOAT_TYPE optPrecision, FLOAT_TYPE pr
 	MakeAllNodesDirty();
 	Score();
 */
-#endif
-
-#ifdef SINGLE_PRECISION_FLOATS
-	FLOAT_TYPE baseIncr = max(0.001*optPrecision, 0.005f);
-#else
-	FLOAT_TYPE baseIncr = 0.0001*optPrecision;
-#endif
 	while(1){
-		//baseIncr will be a sort of ideal increment, but it may be limited because of closeness
-		//to a min or max bracket
-		incr=min(baseIncr, min(prevVal - lowerBracket, upperBracket - prevVal));
+#ifdef SINGLE_PRECISION_FLOATS
+		incr=0.005f;
+#else
+		incr=min(0.0001*optPrecision, min(prevVal - lowerBracket, upperBracket - prevVal));
+		//incr=min(0.0001, min(prevVal - lowerBracket, upperBracket - prevVal));
+#endif
 		CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal+incr);
 		MakeAllNodesDirty();
 		Score();
-
-#ifdef ADAPTIVE_BOUNDED_OPT
-		bool cont = false;
-		//check the incr on the first pass, but only if it wasn't already limited by a bracket
-		while(pass == 0 && !cont && FloatingPointEquals(incr, baseIncr, 1e-5)){
-			//we want differences in likelihood of greater than 8 orders of magnitude
-			//less than the total likelihoods, or 5 orders in single precision
-#ifdef SINGLE_PRECISION_FLOATS
-			if(log10(-prev / fabs(prev - lnL)) > 5.0){
-#else
-			if(log10(-prev / fabs(prev - lnL)) > 8.0){
-#endif
-				baseIncr *= 5.0;
-				//if the increased increment would be greater than what we are allowed
-				//by our bound we'll have to use the limited incr.  We'll try the increased baseIncr
-				//on the next pass.
-				if(baseIncr > min(prevVal - lowerBracket, upperBracket - prevVal)){
-					incr = min(prevVal - lowerBracket, upperBracket - prevVal);
-					cont = true;
-					}
-				else incr = baseIncr;
-				//apply the new increment
-				CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal+incr);
-				MakeAllNodesDirty();
-				Score();
-				}
-			else cont = true;
-			}
 		cur=lnL;
-#endif
 		FLOAT_TYPE d11=(cur-prev)/incr;
-
-#ifdef OPT_BOUNDED_LTRACE
-		double high = lnL;
-#endif
-
+		
 		CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal-incr);
 		MakeAllNodesDirty();
 		Score();
 		cur=lnL;
 		FLOAT_TYPE d12=(cur-prev)/-incr;
-
-#ifdef OPT_BOUNDED_LTRACE
-		curves << incr << "\t" << lowBound << "\t" << lowerBracket << "\t" << prevVal << "\t" << upperBracket << "\t" << highBound << "\t" << lnL << "\t" << prev << "\t" << high << "\t";
-		outman.UserMessage("%.10f", prev);
-#endif
-
+		
 		FLOAT_TYPE d1=(d11+d12)*ZERO_POINT_FIVE;
 		//if the evaluation points straddle the optimum, leave now
 		if((d11 - d12) == ZERO_POINT_ZERO || (d11 > ZERO_POINT_ZERO && d12 < ZERO_POINT_ZERO) || (d11 < ZERO_POINT_ZERO && d12 > ZERO_POINT_ZERO)){
 			CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal);;
 			MakeAllNodesDirty();
+			double poo = prev - start;
 			lnL = prev;
-#ifdef OPT_BOUNDED_LTRACE
-			curves << "return1" << endl;
-			curves.close();
-#endif
 			return prev-start;
 			}
-
+		
 		FLOAT_TYPE d2=(d11-d12)/incr;
-
+		
 		FLOAT_TYPE est=-d1/d2;
-
+		
 		FLOAT_TYPE proposed = prevVal + est;
 
-#ifdef OPT_BOUNDED_LTRACE
-		curves << d1 << "\t" << d2 << "\t" << est << "\t" << proposed << "\t";
-#endif
+	//	outman.UserMessage("%f\t%f\t%f\t%f\t%f", d1, d2, prevVal, est, proposed);
 
 		if(d2 > ZERO_POINT_ZERO){
-			//second derivative is positive, so can't use NR.  Bump the value arbitrarily.
 			positiveD2Num++;
 			if(d1 > ZERO_POINT_ZERO) proposed=prevVal*(FLOAT_TYPE)(ONE_POINT_ZERO+0.01*positiveD2Num);
 			else proposed=prevVal*(FLOAT_TYPE)(ONE_POINT_ZERO-0.01*positiveD2Num);
 			}
 		if(d1 < ZERO_POINT_ZERO && proposed < (lowerBracket + epsilon)){
-			//if we shot below a bound
 			if(prevVal - lowerBracket - epsilon < epsilon * ZERO_POINT_FIVE){
-				//if we're already very close to that bound, exit
 				CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal);;
-				MakeAllNodesDirty();
+				MakeAllNodesDirty();			
 				lnL = prev;
-#ifdef OPT_BOUNDED_LTRACE
-				curves << "return2" << endl;
-				curves.close();
-#endif
 				return prev-start;
 				}
 			lowBoundOvershoot++;
-			//The previous behavior for low/high bracket overshooting caused rare problems because it automatically
-			//tried a value just inside the bracket if it was more than the first overshoot.  If the derivs at both
-			//the low and high brackets propose a value past the other, this can ping-pong back and forth making only
-			//very tiny moves inward, and crap out once 1000 reps have been completed.  Now just try near the bound once
-			if(lowBoundOvershoot == 2)
+			if(lowBoundOvershoot > 1)
 				proposed = lowerBracket + epsilon;
 			else
 				proposed = (prevVal + lowerBracket) * ZERO_POINT_FIVE;
 			}
 		else if(d1 > ZERO_POINT_ZERO && proposed > upperBracket - epsilon){
-			//we shot above a bound
 			if(upperBracket - epsilon - prevVal < epsilon * ZERO_POINT_FIVE){
-				//if we're already very close to that bound, exit
 				CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal);;
 				MakeAllNodesDirty();
 				lnL = prev;
-#ifdef OPT_BOUNDED_LTRACE
-				curves << "return3" << endl;
-				curves.close();
-#endif
 				return prev-start;
 				}
 			upperBoundOvershoot++;
-			if(upperBoundOvershoot == 2)
+			if(upperBoundOvershoot > 1)
 				proposed = upperBracket - epsilon;
 			else
 				proposed = (prevVal + upperBracket) * ZERO_POINT_FIVE;
@@ -503,15 +424,11 @@ FLOAT_TYPE Tree::OptimizeBoundedParameter(FLOAT_TYPE optPrecision, FLOAT_TYPE pr
 		if(d2 < ZERO_POINT_ZERO) estImprove = d1*(proposed - prevVal) + (d2 * (proposed - prevVal) * (proposed - prevVal)) * ZERO_POINT_FIVE;
 		else estImprove = 9999.9;
 
-		//require that we didn't significantly worsen the likelihood overall or on the last pass
-		if(estImprove < optPrecision && prev >= start - 1.0e-6 && lastChange > - 1.0e-6){
+		//require that we didn't significantly worsen the likelihood 
+		if(estImprove < optPrecision && prev >= start - 1.0e-6){
 			CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, prevVal);;
-			MakeAllNodesDirty();
+			MakeAllNodesDirty();			
 			lnL = prev;
-#ifdef OPT_BOUNDED_LTRACE
-			curves << "return4" << endl;
-			curves.close();			
-#endif
 			return prev-start;
 			}
 
@@ -519,17 +436,15 @@ FLOAT_TYPE Tree::OptimizeBoundedParameter(FLOAT_TYPE optPrecision, FLOAT_TYPE pr
 		if(pass > 1000){
 			throw ErrorException("too many passes in OptimizeBoundedParameter");
 			}
-
+		
 		//update the brackets
 		if(d1 <= ZERO_POINT_ZERO && prevVal < upperBracket)
 			upperBracket = prevVal;
 		else if(d1 > ZERO_POINT_ZERO && prevVal > lowerBracket)
 			lowerBracket = prevVal;
-#ifdef OPT_BOUNDED_LTRACE
-		curves << proposed << endl;
-#endif
+
 		CALL_SET_PARAM_FUNCTION(*mod, SetParam)(which, proposed);;
-		MakeAllNodesDirty();
+		MakeAllNodesDirty();			
 		Score();
 		lastChange = lnL - prev;
 		prev=lnL;
@@ -559,33 +474,33 @@ FLOAT_TYPE Tree::OptimizePinv(){
 	FLOAT_TYPE prev=lnL;
 	FLOAT_TYPE cur;
 	FLOAT_TYPE prevVal=mod->PropInvar();
-
+	
 	while(1){
 		FLOAT_TYPE incr=(FLOAT_TYPE)0.001;
 		mod->SetPinv(prevVal+incr, false);
-
+		
 		MakeAllNodesDirty();
 		Score();
 		cur=lnL;
 		FLOAT_TYPE d11=(cur-prev)/incr;
-
+		
 		mod->SetPinv(prevVal-incr, false);
 		MakeAllNodesDirty();
 		Score();
 		cur=lnL;
 		FLOAT_TYPE d12=(cur-prev)/-incr;
-
+		
 		FLOAT_TYPE d1=(d11+d12)*ZERO_POINT_FIVE;
 		FLOAT_TYPE d2=(d11-d12)/incr;
-
+		
 		FLOAT_TYPE est=-d1/d2;
-
+		
 		if((abs(est) < 0.001 && d2 < ZERO_POINT_ZERO) || (d1>ZERO_POINT_ZERO && prevVal==mod->MaxPinv())){
 			mod->SetPinv(prevVal, false);
-			MakeAllNodesDirty();
+			MakeAllNodesDirty();			
 			return prev-start;
 			}
-
+		
 		FLOAT_TYPE t;
 		if(d2 < ZERO_POINT_ZERO){
 			t=prevVal+est;
@@ -599,12 +514,12 @@ FLOAT_TYPE Tree::OptimizePinv(){
 	//		if(t > mod->MaxPinv()) t=(prevVal+mod->MaxPinv())*ZERO_POINT_FIVE;
 			if(t > mod->MaxPinv()) t=mod->MaxPinv();
 			}
-
+			
 		mod->SetPinv(t, false);
-		MakeAllNodesDirty();
+		MakeAllNodesDirty();			
 		Score();
 		prev=lnL;
-		prevVal=t;
+		prevVal=t;	
 		}
 	return -1;
 	}
@@ -614,17 +529,18 @@ int num=1;
 FLOAT_TYPE Tree::OptimizeBranchLength(FLOAT_TYPE optPrecision, TreeNode *nd, bool goodGuess){
 	nd->alreadyOptimized=true;
 	FLOAT_TYPE improve;
-
+	
 #ifdef OPT_DEBUG
 	optsum << nd->nodeNum << "\t" << nd->dlen << "\t";
 #endif
-
+		
 #ifdef BRENT
 	improve = BrentOptimizeBranchLength(optPrecision, nd, goodGuess);
 #else
 	//improve = NewtonRaphsonOptimizeBranchLength(optPrecision, nd, goodGuess);
 	//abandoning use of goodGuess.  Doesn't seem to be reducing opt passes, which
 	//was the point.
+	//optCalcs++;
 	ProfNewton.Start();
 	improve = NewtonRaphsonOptimizeBranchLength(optPrecision, nd, true);
 	ProfNewton.Stop();
@@ -632,7 +548,7 @@ FLOAT_TYPE Tree::OptimizeBranchLength(FLOAT_TYPE optPrecision, TreeNode *nd, boo
 
 #ifdef OPT_DEBUG
 	optsum << nd->dlen << "\t" << improve << endl;
-
+	
 /*	ofstream opttrees;
 	if(num == 1) opttrees.open("everyTree.tre");
 	else opttrees.open("everyTree.tre", ios::app);
@@ -666,9 +582,9 @@ void Tree::OptimizeBranchesWithinRadius(TreeNode *nd, FLOAT_TYPE optPrecision, i
 #endif
 
 	FLOAT_TYPE totalIncrease=ZERO_POINT_ZERO, prunePointIncrease=ZERO_POINT_ZERO, thisIncr, pruneRadIncrease=ZERO_POINT_ZERO;
-
+	
 	//DEBUG
-	//for codon models, numerical instability can cause problems if a
+	//for codon models, numerical instability can cause problems if a 
 	//branch length is super short and its MLE is large.  This is very
 	//rare, but hard to detect when it is happening.  So, raise the blens
 	//before all of the optimization if they are very small
@@ -682,7 +598,7 @@ void Tree::OptimizeBranchesWithinRadius(TreeNode *nd, FLOAT_TYPE optPrecision, i
 	FLOAT_TYPE leftIncrease=ZERO_POINT_ZERO, rightIncrease=ZERO_POINT_ZERO, ancIncrease=ZERO_POINT_ZERO;
 	leftIncrease = OptimizeBranchLength(optPrecision, nd->left, false);
 	ancIncrease = OptimizeBranchLength(optPrecision, nd, false);
-	rightIncrease = OptimizeBranchLength(optPrecision, nd->right, false);
+	rightIncrease = OptimizeBranchLength(optPrecision, nd->right, false);	
 
 	if(leftIncrease > ZERO_POINT_ZERO) nodeOptVector.push_back(nd->left);
 	if(ancIncrease > ZERO_POINT_ZERO) nodeOptVector.push_back(nd);
@@ -691,7 +607,7 @@ void Tree::OptimizeBranchesWithinRadius(TreeNode *nd, FLOAT_TYPE optPrecision, i
 #else
 	totalIncrease += OptimizeBranchLength(optPrecision, nd->left, false);
 	totalIncrease+= OptimizeBranchLength(optPrecision, nd, false);
-	totalIncrease += OptimizeBranchLength(optPrecision, nd->right, false);
+	totalIncrease += OptimizeBranchLength(optPrecision, nd->right, false);	
 
 	nodeOptVector.push_back(nd->left);
 	nodeOptVector.push_back(nd);
@@ -747,7 +663,7 @@ void Tree::OptimizeBranchesWithinRadius(TreeNode *nd, FLOAT_TYPE optPrecision, i
 				if(root->right != nd && root->right->alreadyOptimized==false) totalIncrease +=  RecursivelyOptimizeBranches(root->right, optPrecision, subtreeNode, rad, true, ZERO_POINT_ZERO);
 				}
 			}
-
+		
 		if(prunePointIncrease > ZERO_POINT_ZERO){//now doing a radius opt at the prune point starting from the 4 branches attached to that branch
 			//in other words, this is no longer centered on a node, but on a branch
 			if(prune->left != NULL){
@@ -813,12 +729,12 @@ optsum << "radiusopt intial pass total\t" << totalIncrease << endl;
 						if(sec != nodeOptVector.end()) sec++;
 						nodeOptVector.erase(del);
 						}
-					else
+					else 
 						if(sec != nodeOptVector.end()) sec++;
 					}
 				}
 			}
-*/
+*/	
 	if(nodeOptVector.empty()) finalNode = nd->right;
 	else{
 		while(nodeOptVector.empty() == false){
@@ -854,7 +770,7 @@ FLOAT_TYPE Tree::RecursivelyOptimizeBranches(TreeNode *nd, FLOAT_TYPE optPrecisi
 
 	if(nd->alreadyOptimized == false) delta = OptimizeBranchLength(optPrecision, nd, true);
 	scoreIncrease += delta;
-
+	
 	if(!(delta < optPrecision))
 		nodeOptVector.push_back(nd);
 //	if(radius==0) cout << "hit max radius!" <<endl;
@@ -869,7 +785,7 @@ FLOAT_TYPE Tree::RecursivelyOptimizeBranches(TreeNode *nd, FLOAT_TYPE optPrecisi
 	}
 
 FLOAT_TYPE Tree::RecursivelyOptimizeBranchesDown(TreeNode *nd, TreeNode *calledFrom, FLOAT_TYPE optPrecision, int subtreeNode, int radius, FLOAT_TYPE scoreIncrease){
-
+		
 	FLOAT_TYPE delta = ZERO_POINT_ZERO;
 	if(nd->alreadyOptimized==false)//because the next or prev of calledFrom could be unoptimized
 		//even if nd has been, this check needs to be done here, rather than before calling this func
@@ -910,6 +826,7 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::CalcDerivativesRateHet(TreeNode *nd1, TreeNod
 	//nd1 and nd2 are the nodes on either side of the branch of interest
 	//nd1 will always be the "lower" one, and will always be internal, while
 	//nd2 can be internal or terminal
+	int nsites=data->NChar();
 	const CondLikeArray *claOne;
 	if(nd1->left == nd2)
 		claOne=GetClaUpLeft(nd1, true);
@@ -917,7 +834,7 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::CalcDerivativesRateHet(TreeNode *nd1, TreeNod
 		claOne=GetClaUpRight(nd1, true);
 	else //nd1 must be the root, and nd2 it's middle des
 		claOne=GetClaDown(nd1, true);
-
+	
 	//this must happen BEFORE the derivs are calced, or the prmat won't be current for this branch!
 	CondLikeArray *claTwo=NULL;
 	if(nd2->left != NULL)
@@ -977,7 +894,7 @@ FLOAT_TYPE Tree::BranchLike(TreeNode *optNode){
 		try{
 			if(optNode->anc->left==optNode){
 				optNode->anc->claIndexDown = claMan->SetDirty(optNode->anc->claIndexDown);
-				optNode->anc->claIndexUR = claMan->SetDirty(optNode->anc->claIndexUR);
+				optNode->anc->claIndexUR = claMan->SetDirty(optNode->anc->claIndexUR);		
 				GetClaUpLeft(optNode->anc);
 				}
 			else if(optNode->anc->right==optNode){
@@ -990,7 +907,7 @@ FLOAT_TYPE Tree::BranchLike(TreeNode *optNode){
 				optNode->anc->claIndexUR = claMan->SetDirty(optNode->anc->claIndexUR);
 				GetClaDown(optNode->anc);
 				}
-
+			
 			//now sum as if this were the root
 			ConditionalLikelihoodRateHet(ROOT, optNode->anc);
 			return lnL;
@@ -1003,26 +920,26 @@ FLOAT_TYPE Tree::BranchLike(TreeNode *optNode){
 			resc << "rescale reduced to " << rescaleEvery << endl;
 			resc.close();
 			if(rescaleEvery<2) rescaleEvery=2;
-			}
+			}			
 		}while(scoreOK==false);
 	return 0;
 	}
 
 void Tree::SampleBlenCurve(TreeNode *nd, ofstream &out){
-
+	
 	FLOAT_TYPE initialLen=nd->dlen;
 	Score();
-
+	
 	out << nd->dlen << "\t" << lnL << "\n";
-
+	
 	SetBranchLength(nd, (FLOAT_TYPE)1e-4);
 	for(int i=0;i<15;i++){
 		Score();
 		out << nd->dlen << "\t" << lnL << "\n";
-		SetBranchLength(nd, nd->dlen * (FLOAT_TYPE)2.0);
+		SetBranchLength(nd, nd->dlen * (FLOAT_TYPE)2.0);	
 		}
-	SetBranchLength(nd, initialLen);
-	}
+	SetBranchLength(nd, initialLen);	
+	} 
 
 void Tree::CalcEmpiricalDerivatives(TreeNode *nd, FLOAT_TYPE &D1, FLOAT_TYPE &D2){
 	FLOAT_TYPE start_blen = nd->dlen;
@@ -1032,13 +949,13 @@ void Tree::CalcEmpiricalDerivatives(TreeNode *nd, FLOAT_TYPE &D1, FLOAT_TYPE &D2
 
 	if(blen_used > 1e-6)
 		incr= blen_used * 0.001;
-	else if(blen_used > min_brlen + 1.0e-8) incr = blen_used * 0.01;
+	else if(blen_used > min_brlen + 1.0e-8) incr = blen_used * 0.01; 
 	else{
 		incr =1.0e-8;
 		blen_used = max(start_blen, min_brlen + incr);
 		SetBranchLength(nd, blen_used);
 		}
-
+	
 	MakeAllNodesDirty();
 	Score();
 	FLOAT_TYPE start=lnL;
@@ -1065,7 +982,7 @@ void Tree::CalcEmpiricalDerivatives(TreeNode *nd, FLOAT_TYPE &D1, FLOAT_TYPE &D2
 //	MakeAllNodesDirty();
 	Score();
 
-/*
+/*	
 	deb.open("clas.log");
 	OutputNthClaAcrossTree(deb, root, 274);
 	deb.close();
@@ -1100,7 +1017,7 @@ FLOAT_TYPE Tree::NewtonRaphsonOptimizeBranchLength(FLOAT_TYPE precision1, TreeNo
 	FLOAT_TYPE bestLen = nd->dlen;
 	Score();
 	FLOAT_TYPE bestScore = lnL;
-
+	
 	FLOAT_TYPE trueNRImprove = nrScore - origScore;
 	FLOAT_TYPE trueBestImprove = bestScore - origScore;
 
@@ -1141,18 +1058,18 @@ if(nd->nodeNum == 8){
 	nd->dlen=initDlen;
 	SweepDirtynessOverTree(nd);
 	scr.close();
-	}
+	}	
 */
 #endif
 //	nd->dlen=.3254;
 //	SweepDirtynessOverTree(nd);
 /*
-	if(nd->nodeNum==67){
+	if(nd->nodeNum==67){	
 		ofstream deb("curves.log");
 		SampleBlenCurve(nd, deb);
 		deb.close();
 		}
-*/
+*/	
 
 //	MakeAllNodesDirty();
 /*	FLOAT_TYPE start, empD11, empD12, empD1, empD2;
@@ -1169,14 +1086,14 @@ if(nd->nodeNum == 8){
 //	log.precision(10);
 
 	opt << nd->nodeNum << "\t" << nd->dlen << "\t" << lnL <<endl;
-
+	
 //	ofstream scr("impVSd1.log", ios::app);
 	if(lnL > -2){
 		Score(nd->anc->nodeNum);
 		}
 
 	FLOAT_TYPE delta;
-
+	
 #endif
 	FLOAT_TYPE totalEstImprove=ZERO_POINT_ZERO;
 	int iter=0;
@@ -1196,12 +1113,11 @@ if(nd->nodeNum == 8){
 		bool scoreOK;
 		int sweeps=0;
 		pair<FLOAT_TYPE, FLOAT_TYPE> derivs;
-		do{		//this part just catches the exception that could be thrown by the rescaling
+		do{		//this part just catches the exception that could be thrown by the rescaling 
 				//function if it decides that the current rescaleEvery is too large
 			try{
 				scoreOK=true;
 				derivs = CalcDerivativesRateHet(nd->anc, nd);
-				optCalcs++;
 				if(iter == 0) initialL = lnL;
 				}catch(int err){
 				scoreOK=false;
@@ -1215,15 +1131,15 @@ if(nd->nodeNum == 8){
 					}
 				else if(err==2){
 					//this is necessary because rarely it is possible that attempted optimization at nodes
-					//across the tree causes more than a single set of clas to be in use, which can cause
+					//across the tree causes more than a single set of clas to be in use, which can cause 
 					//clas to run out if we are in certain memory situations
 					assert(sweeps==0);
 					SweepDirtynessOverTree(nd);
 					sweeps++;
 					}
 				}
-			}while(scoreOK==false);
-
+			}while(scoreOK==false);		
+		
 		d1=derivs.first;
 		d2=derivs.second;
 
@@ -1245,33 +1161,26 @@ if(nd->nodeNum == 8){
 		if(d1 <= ZERO_POINT_ZERO && nd->dlen < knownMax) knownMax = nd->dlen;
 		else if(d1 > ZERO_POINT_ZERO && nd->dlen > knownMin) knownMin = nd->dlen;
 
-														#ifdef OPT_DEBUG
-														opt << nd->dlen << "\t" << lnL << "\t" << d1 << "\t" << d2 << "\t" << estScoreDelta << "\t";
+														#ifdef OPT_DEBUG			
+														opt << nd->dlen << "\t" << lnL << "\t" << d1 << "\t" << d2 << "\t" << estScoreDelta << "\t";		
 														#endif
 		FLOAT_TYPE abs_d1 = fabs(d1);
-		if (d2 >= ZERO_POINT_ZERO){//curvature is wrong for NR use
+		if (d2 >= ZERO_POINT_ZERO){//curvature is wrong for NR use 
 			//this does NOT only happen when the peak is at the min, as I used to think
-														#ifdef OPT_DEBUG
-														opt << "d2 > 0\t";
+														#ifdef OPT_DEBUG			
+														opt << "d2 > 0\t";				
 														#endif
 			//Not allowing this escape anymore
 			if(fabs(d1) < ONE_POINT_ZERO){//don't bother doing anything if the surface is this flat
-														#ifdef OPT_DEBUG
-														opt << "very small d1.  Return.\n";
-														#endif
+														#ifdef OPT_DEBUG			
+														opt << "very small d1.  Return.\n";				
+														#endif				
 //				return totalEstImprove;
 				}
 
 			if(d1 <= ZERO_POINT_ZERO){//if d1 is negative, try shortening arbitrarily, or go halfway to the knownMin
 				FLOAT_TYPE proposed;
 #ifdef SINGLE_PRECISION_FLOATS
-				if(FloatingPointEquals(nd->dlen, min_brlen, 1.0e-8f)){
-					#ifdef OPT_DEBUG
-					opt << "already at min, return\n";
-					#endif
-					return totalEstImprove;
-					}
-
 				if(knownMin == min_brlen){
 					if(nd->dlen <= 1.0e-4f) proposed = min_brlen;
 					else if(nd->dlen <= 0.005f) proposed = 1.0e-4f;
@@ -1281,7 +1190,7 @@ if(nd->nodeNum == 8){
 #else
 				if(FloatingPointEquals(nd->dlen, min_brlen, 1.0e-8)){
 					#ifdef OPT_DEBUG
-					opt << "already at min, return\n";
+					opt << "already at min, return\n"; 
 					#endif
 					return totalEstImprove;
 					}
@@ -1335,45 +1244,33 @@ if(nd->nodeNum == 8){
 						}
 					}
 				v=proposed;
-				totalEstImprove += precision1;
+				totalEstImprove += precision1;				
 				}
 			}
 		else{//trying NR is feasible
 
 			if(d1 < ZERO_POINT_ZERO && FloatingPointEquals(nd->dlen, min_brlen, 1.0e-8)){
 														#ifdef OPT_DEBUG
-														opt << "already at min, return\n";
+														opt << "already at min, return\n"; 
 														#endif
 				return totalEstImprove;
 				}
 			if(d1 > ZERO_POINT_ZERO && FloatingPointEquals(nd->dlen, max_brlen, 1.0e-8)){
 														#ifdef OPT_DEBUG
-														opt << "already at max, return\n";
+														opt << "already at max, return\n"; 
 														#endif
 				return totalEstImprove;
 				}
-
+			
 			//12/9/07 now requiring the actual likelihood to improve.  Single optimization passes with AA and Codon
 			//models were fairly often moving to worse likelihoods but indicating that the function should return
-			//since the deriv calculations are now calculating the true likelihood, this has no real overhead
-#ifdef NR_EXIT_96
+			//since the deriv calculations are now calculating the true likelihood, this has no real overhead		
 			if(estScoreDelta < precision1 && (iter == 0 || lnL >= initialL)){
-#elif defined(NR_EXIT_R340)
-			if(estScoreDelta < precision1 && (iter == 0 || lnL + 1.0e-8 >= initialL)){
-#elif defined(NR_EXIT_R343)
-			if(estScoreDelta < precision1 && (iter == 0 || lnL + max(1.0e-7, GARLI_FP_EPS * 10.0) >= initialL)){
-#else
-			//this will gradually increase the tolerated amount of score worsening (due to floating point imprecision)
-			//as the iterations go on.  If possible we'd still like to see very close scores, but if we're having
-			//trouble getting close after many iterations we don't want to terminate the program.  If something is
-			//horribly wrong with the scores this will still cause termination.
-			if(estScoreDelta < precision1 && (iter == 0 || lnL + ((iter < 10 ? 1 : iter) * max(1.0e-7, GARLI_FP_EPS * 10)) >= initialL)){
-#endif
-														#ifdef OPT_DEBUG
+														#ifdef OPT_DEBUG			
 														opt << "delta < prec, return\n";
 														if(curScore==-ONE_POINT_ZERO){
 															Score(nd->anc->nodeNum);
-															}
+															}		
 														#endif
 				return totalEstImprove;
 				}
@@ -1381,7 +1278,7 @@ if(nd->nodeNum == 8){
 				bool noNR = false;
 				if(iter > 10) {
 					//If we've taken a lot of NR steps without bracketing the peak (diagnosed by
-					//the knownMax or knownMin being equal to the max or min brlen), make
+					//the knownMax or knownMin being equal to the max or min brlen), make 
 					//some agresssive moves.  This is often useful when the tree/branch lengths are
 					//terrible and numerical instability creeps into the derivative and likelihood
 					//calculations, which can cause the NR moves based on the derivs to be extremely
@@ -1393,28 +1290,12 @@ if(nd->nodeNum == 8){
 							else{
 								if(v < 0.2)
 									v = min((v + max_brlen)*0.5, v*5.0);
-								else
+								else 
 									v = min((v + max_brlen)*0.5, v*2.0);
 								}
 							noNR = true;
-														#ifdef OPT_DEBUG
+														#ifdef OPT_DEBUG			
 														opt << "IgnoreNRUp\t";
-														#endif
-							}
-//DEBUG
-	//					else if(iter == 30){
-						else if(((iter - 20) > 0) && ((iter - 20) % 10 == 0)){
-							//another annoying special case (only for codon models I think)
-							//it is possible for the derivs to apparently be
-							//correct but for the NR estimate to still be so conservative that it takes forever
-							//to converge.  The above code can take care of that if we've never been to the right
-							//of the peak (knownMax == max_brlen), but this can also happen if we were to right
-							//of the peak at one point and jumped all the way to the min length.  In that case,
-							//try a jump to the midpoint of the bracket or 100x the current length,
-							//whichever is less
-							v = min((v + knownMax)*0.5, v*100.0);
-														#ifdef OPT_DEBUG
-														opt << "IgnoreNRUp2\t";
 														#endif
 							}
 						}
@@ -1425,7 +1306,7 @@ if(nd->nodeNum == 8){
 							else
 								v = (v + min_brlen)*0.5;
 							noNR = true;
-														#ifdef OPT_DEBUG
+														#ifdef OPT_DEBUG			
 														opt << "IgnoreNRDown\t";
 														#endif
 							}
@@ -1435,15 +1316,15 @@ if(nd->nodeNum == 8){
 					v += estDeltaNR;
 
 														#ifdef OPT_DEBUG
-//														opt << v << "\t";
+														opt << v << "\t";			
 														#endif
 
 				}
 			if ((iter != 0) && (abs_d1 > abs_d1_prev)){
 				//not doing anything special here.  This generally means that we overshot the peak, but
 				//should get it from the other side
-														#ifdef OPT_DEBUG
-														opt << "d1 increased!\t";
+														#ifdef OPT_DEBUG			
+														opt << "d1 increased!\t";	
 														#endif
 				}
 			if (v <= knownMin){
@@ -1453,7 +1334,7 @@ if(nd->nodeNum == 8){
 					FLOAT_TYPE scoreDeltaToMin = (deltaToMin * d1 + (deltaToMin*deltaToMin*d2*ZERO_POINT_FIVE));
 					if(scoreDeltaToMin < precision1){
 													#ifdef OPT_DEBUG
-													opt << "imp to MIN < prec, return\n";
+													opt << "imp to MIN < prec, return\n";			
 													#endif
 						return totalEstImprove;
 						}
@@ -1490,10 +1371,10 @@ if(nd->nodeNum == 8){
 						return totalEstImprove;
 						}
 					v=proposed;
-					totalEstImprove += scoreDeltaToMin;
+					totalEstImprove += scoreDeltaToMin;				
 					}
 				}
-
+			
 			else if (v >= knownMax){
 				if(knownMax == max_brlen){
 					FLOAT_TYPE deltaToMax=max_brlen - nd->dlen;
@@ -1552,7 +1433,7 @@ if(nd->nodeNum == 8){
 					MakeAllNodesDirty();
 					Score(nd->anc->nodeNum);
 					assert(fabs(prevScore - lnL) < .01);
-
+					
 					SetBranchLength(nd, v);
 					MakeAllNodesDirty();
 					Score(nd->anc->nodeNum);
@@ -1560,21 +1441,17 @@ if(nd->nodeNum == 8){
 					}
 				}
 			}
-
-		curScore=lnL;
+				
+		curScore=lnL;	
 		delta=prevScore - lnL;
 
-//opt << v << "\t" << "\n";
-//opt.flush();
+opt << v << "\t" << "\n";
+opt.flush();
 #endif
-#ifdef OPT_DEBUG
-//	opt << nd->dlen << "\t" << lnL << "\t" << d1 << "\t" << d2 << "\t" << estScoreDelta << "\t";
-	opt << v << "\t" << "\n";
-	opt.flush();
-#endif
+
 		prevScore=lnL;
 		v_prev=v;
-
+		
 		iter++;
 		if(iter>50){
 /*			ofstream deb("optdeb.log");
@@ -1582,11 +1459,11 @@ if(nd->nodeNum == 8){
 			deb << "current length " << nd->dlen << endl;
 			deb << "prev length " << v_prev << endl;
 			deb << "d1 " << d1 << " d2 " << d2 << endl;
-			deb << "neg proposal num " << negProposalNum << endl;
+			deb << "neg proposal num " << negProposalNum << endl;			
 			deb.close();
 */
-			if(iter == 51) outman.UserMessage("Notice: possible problem with branchlength optimization.\nIf you see this message frequently, please report it to zwickl@nescent.org.\nDetails: nd=%d init=%f cur=%f prev=%d d1=%f d2=%f neg=%d", nd->nodeNum, v_onEntry, v_prev, nd->dlen, d1, d2, negProposalNum);
-			if(iter > 100)
+			if(iter == 51) outman.UserMessage("Notice: possible problem with branchlength optimization.\nIf you see this message frequently, please report it to zwickl@nescent.org.\nDetails: nd=%d init=%f cur=%f prev=%d d1=%f d2=%f neg=%d", nd->nodeNum, v_onEntry, v_prev, nd->dlen, d1, d2, negProposalNum);	
+			if(iter > 75)
 				throw(ErrorException("Problem with branchlength optimization.  Please report this error to zwickl@nescent.org.\nDetails: nd=%d init=%f cur=%f prev=%d d1=%f d2=%f neg=%d", nd->nodeNum, v_onEntry, v_prev, nd->dlen, d1, d2, negProposalNum));
 /*
 				ofstream scr("NRcurve.log");
@@ -1614,7 +1491,7 @@ if(nd->nodeNum == 8){
 //				opt.close();
 //				}
 			//assert(iter<=50);
-			}
+			}		
 		}while(moveOn==false);
 #ifdef OPT_DEBUG
 	opt << "final\t" << nd->dlen << "\t" << lnL << endl;
@@ -1625,7 +1502,7 @@ if(nd->nodeNum == 8){
 /*
 void Tree::RecursivelyOptimizeBranches(TreeNode *nd, FLOAT_TYPE optPrecision, int subtreeNode, int radius, int centerNode, bool dontGoNext){
 	FLOAT_TYPE prevScore=lnL;
-#ifdef BRENT
+#ifdef BRENT	
 	BrentOptimizeBranchLength(optPrecision, nd, false);
 	FLOAT_TYPE delta=lnL - prevScore;
 	bool continueOpt=(delta*2.0 > optPrecision ? true : false);
@@ -1633,7 +1510,7 @@ void Tree::RecursivelyOptimizeBranches(TreeNode *nd, FLOAT_TYPE optPrecision, in
 	bool continueOpt = NewtonRaphsonOptimizeBranchLength(optPrecision, nd);
 //	continueOpt=true;
 #endif
-
+	
 	if(nd->left!=NULL && radius>1 && continueOpt) RecursivelyOptimizeBranches(nd->left, optPrecision, subtreeNode, radius-1, centerNode, false);
 	if(nd->next!=NULL && dontGoNext==false){
 		RecursivelyOptimizeBranches(nd->next, optPrecision, subtreeNode, radius, centerNode, false);
@@ -1642,15 +1519,15 @@ void Tree::RecursivelyOptimizeBranches(TreeNode *nd, FLOAT_TYPE optPrecision, in
 
 void Tree::RecursivelyOptimizeBranchesDown(TreeNode *nd, TreeNode *calledFrom, FLOAT_TYPE optPrecision, int subtreeNode, int radius, int ){
 	FLOAT_TYPE prevScore=lnL;
-#ifdef BRENT
+#ifdef BRENT	
 	BrentOptimizeBranchLength(optPrecision, nd, false);
 	FLOAT_TYPE delta=lnL - prevScore;
-	bool continueOpt=(delta*2.0 > optPrecision ? true : false);
+	bool continueOpt=(delta*2.0 > optPrecision ? true : false); 
 #else
 	bool continueOpt = NewtonRaphsonOptimizeBranchLength(optPrecision, nd);
 //	continueOpt=true;
 #endif
-
+	
 	if(nd->left!=NULL && nd->left!=calledFrom && radius>1) RecursivelyOptimizeBranches(nd->left, optPrecision, subtreeNode, radius, 0, true);
 	else if(radius>1) RecursivelyOptimizeBranches(nd->left->next, optPrecision, subtreeNode, radius, 0, false);
 	if(nd->anc!=root && radius>1 && continueOpt){
@@ -1674,11 +1551,11 @@ void Tree::OptimizeBranchesAroundNode(TreeNode *nd, FLOAT_TYPE optPrecision, int
 	FLOAT_TYPE precision1, precision2;
 
 	if(subtreeNode==0) SetAllTempClasDirty();
-
+	
 	precision1=optPrecision;// * 0.5;
 	if(optPrecision > .2) precision2=0.0;
 	else precision2=precision1 * 0.5;
-
+	
 	if(nd != root){
 		BrentOptimizeBranchLength(precision1, nd, false);
 		BrentOptimizeBranchLength(precision1, nd->left, false);
@@ -1687,10 +1564,10 @@ void Tree::OptimizeBranchesAroundNode(TreeNode *nd, FLOAT_TYPE optPrecision, int
 	else{
 		BrentOptimizeBranchLength(precision1, nd->left, false);
 		BrentOptimizeBranchLength(precision1, nd->left->next, false);
-		BrentOptimizeBranchLength(precision1, nd->right, false);
+		BrentOptimizeBranchLength(precision1, nd->right, false);	
 		}
 
-
+	
 	if(precision2 > 0){
 		//if were're doing multiple optimization passes, only this stuff needs to be set dirty
 		claMan->SetDirty(nd->nodeNum, nd->claIndex, true);
@@ -1705,10 +1582,10 @@ void Tree::OptimizeBranchesAroundNode(TreeNode *nd, FLOAT_TYPE optPrecision, int
 		else {
 			BrentOptimizeBranchLength(precision2, nd->left, false);
 			BrentOptimizeBranchLength(precision2, nd->left->next, false);
-			BrentOptimizeBranchLength(precision2, nd->right, false);
+			BrentOptimizeBranchLength(precision2, nd->right, false);			
 			}
 		}
-
+		
 	//these must be called after all optimization passes are done around this node
 	TraceDirtynessToRoot(nd);
 	if(subtreeNode==0)
@@ -1722,7 +1599,7 @@ inline FLOAT_TYPE CallBranchLike(TreeNode *thisnode, Tree *thistree, FLOAT_TYPE 
 	thisnode->dlen=exp(blen);
 	return thistree->BranchLike(thisnode)*-1;
 	}
-
+	
 inline FLOAT_TYPE CallBranchLikeRateHet(TreeNode *thisnode, Tree *thistree, FLOAT_TYPE blen){
 
 	thisnode->dlen=blen;
@@ -1730,7 +1607,7 @@ inline FLOAT_TYPE CallBranchLikeRateHet(TreeNode *thisnode, Tree *thistree, FLOA
 
 #ifdef OPT_DEBUG
 	ofstream opt("optimization.log" ,ios::app);
-	opt.precision(11);
+	opt.precision(11);	
 	opt << thisnode->dlen << "\t" << like << "\n\t";
 	opt.close();
 
@@ -1740,17 +1617,17 @@ inline FLOAT_TYPE CallBranchLikeRateHet(TreeNode *thisnode, Tree *thistree, FLOA
 		opttrees <<  "utree tree1=" << treeString << ";" << endl;
 		opttrees.close();
 	//if(thisnode->left!=NULL) thistree->TraceDirtynessToRoot(thisnode);
-
+	
 	ofstream scr("optscores.log", ios::app);
 	scr.precision(10);
 	scr << like << "\t" << blen << endl;
-	scr.close();
+	scr.close(); 
 #endif
 
 	thistree->RerootHere(thisnode->nodeNum);
 	thistree->MakeAllNodesDirty();
 	thistree->Score(thistree->data);
-
+	
 	return like;
 	}
 
@@ -1776,7 +1653,7 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 					lnL=-1;
 					}
 				c=min_brlen*10000.0;
-				}
+				}				
 			else{
 				if(blen<.0001){
 					a=.000001;
@@ -1791,13 +1668,13 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 				else {
 					a=.1;
 					b=blen;
-					c=.75;
+					c=.75;					
 					}
 
 		}
 			}
 		else{
-			//tighter
+			//tighter 
 			if(blen > 1e-6){
 				a=blen*.66;
 				b=blen;
@@ -1812,8 +1689,8 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 					b=min_brlen*100;
 					lnL=-1;
 					}
-				c=min_brlen*10000.0;
-				}
+				c=min_brlen*10000.0;				
+				}			
 			}
 
 #ifdef OPT_DEBUG
@@ -1821,7 +1698,7 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 		opt << "node " << here->nodeNum << "\t" << here->dlen  << "\n";
 //		opt << "\t" << a << "\t" << b << "\t" << c << "\n";
 #endif
-
+			
 		if(mod->NRateCats()==1){
 			mnbrak(&a, &b, &c, &fa, &fb, &fc, CallBranchLike, here, this);
 	//		opt << a << "\t" << b << "\t" << c << "\t";
@@ -1834,7 +1711,7 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 #endif
 			fb=lnL;
 			int zeroMLE = DZbrak(&a, &b, &c, &fa, &fb, &fc, CallBranchLikeRateHet, here, this);
-
+			
 			bool flatSurface=false;
 			if(fa-fb + fc-fb < .000001) flatSurface=true;
 			//braka=fa;
@@ -1858,10 +1735,10 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 				minScore=fb;
 				}
 			}
-		FLOAT_TYPE min_len=minimum;
+		FLOAT_TYPE min_len=minimum;		
 //		FLOAT_TYPE min_len=exp(minimum);
 		here->dlen = (min_len > min_brlen ? (min_len < max_brlen ? min_len : max_brlen) : min_brlen);
-
+		
 #ifdef OPT_DEBUG
 		opt.open("optimization.log" ,ios::app);
 		opt.precision(9);
@@ -1883,7 +1760,7 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 	lnL=minScore;
 	return minScore;
 	}
-*/
+*/	
 
 FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode *here, bool goodGuess){
 	//we pass the node whose branch length whose blen we want to optimize, but note that the
@@ -1892,9 +1769,9 @@ FLOAT_TYPE Tree::BrentOptimizeBranchLength(FLOAT_TYPE accuracy_cutoff, TreeNode 
 	//use a wide bracket.  If it is false, try a fairly tight bracket around the current val
 	FLOAT_TYPE a, b, c, fa, fb, fc, minimum, minScore=ZERO_POINT_ZERO;
 	FLOAT_TYPE blen=here->dlen;
-
+	
 	FLOAT_TYPE min_len;
-
+	
 	assert(blen>=min_brlen);
 
 	FLOAT_TYPE initialScore;
@@ -1914,7 +1791,7 @@ if(here->anc){
 					lnL=-1;
 					}
 				c=min_brlen*10000.0;
-				}
+				}				
 			else{
 				if((blen>0.0001)){
 					a=.000001;
@@ -1931,12 +1808,12 @@ if(here->anc){
 					a=.01;
 					b=blen;
 					c=blen*2.0;
-					//c=.75;
+					//c=.75;					
 					}
 				}
 			}
 		else{
-			//tighter
+			//tighter 
 			if(blen >= 1e-6){
 				a=blen*.66;
 				b=blen;
@@ -1951,8 +1828,8 @@ if(here->anc){
 					b=min_brlen*100;
 					lnL=-1;
 					}
-				c=min_brlen*10000.0;
-				}
+				c=min_brlen*10000.0;				
+				}			
 			}
 #endif
 #ifdef FOURTH_ROOT
@@ -1971,7 +1848,7 @@ if(here->anc){
 			}
 		else{
 			a=(b <= 0.026 ? .01 : b-0.025);
-			c=b+0.025;
+			c=b+0.025;		
 			}
 		}
 */
@@ -1989,9 +1866,9 @@ if(here->anc){
 	curves.flush();
 	optInfo.Setup(here->nodeNum, blen, accuracy_cutoff, goodGuess, a, b, c);
 
-#endif
+#endif		
 		int zeroMLE = DZbrak(&a, &b, &c, &fa, &fb, &fc, CallBranchLike, here, this);
-
+		
 #ifdef OPT_DEBUG
 /*		if(trueMin != zeroMLE){
 			assert(0);
@@ -2032,11 +1909,11 @@ if(here->anc){
 #elif ROOT_OPT
 		if(zeroMLE)
 			min_len=minimum;
-		else
+		else 
 			min_len=minimum*minimum;
 #else
 		min_len=minimum;
-#endif
+#endif	
 		}
 
 //	if(here->dlen != min_len){
@@ -2048,15 +1925,15 @@ if(here->anc){
 		minScore=CallBranchLike(here, this, here->dlen, false);
 		}
 */	lnL=-minScore;
-
+	
 	#ifdef OPT_DEBUG
 	optInfo.Report(opt);
 	opt << "final\t" << minimum << "\t" << minScore << endl;
-
+	
 //	optsum << here->nodeNum << "\t" << blen << "\t" << min_len << "\t" << initialScore - minScore << endl;
-
+	
 	#endif
-
+	
 	return initialScore - minScore;
 	}
 
@@ -2086,14 +1963,10 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 	FLOAT_TYPE D1a, D1c, D1g, D1t;
 	FLOAT_TYPE D2a, D2c, D2g, D2t;
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
-	FLOAT_TYPE totL=ZERO_POINT_ZERO, grandSumL=ZERO_POINT_ZERO;
+	FLOAT_TYPE totL=ZERO_POINT_ZERO;
 
 #ifdef OMP_TERMDERIV
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(La, Lc, Lg, Lt, D1a, D1c, D1g, D1t, D2a, D2c, D2g, D2t, partial, Ldata, siteL) reduction(+ : tot1, tot2, totL, grandSumL)
-	#else
 	#pragma omp parallel for private(La, Lc, Lg, Lt, D1a, D1c, D1g, D1t, D2a, D2c, D2g, D2t, partial, Ldata, siteL) reduction(+ : tot1, tot2, totL)
-	#endif
 	for(int i=0;i<nchar;i++){
 		Ldata = &Ldat[ambigMap[i]];
 		partial = &partialCLA->arr[i*4*nRateCats];
@@ -2124,7 +1997,7 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 					}
 				Ldata++;
 				}
-
+				
 			else if(*Ldata == -4){ //total ambiguity
 				for(int r=0;r<nRateCats;r++){
 					La += partial[0]* rateProb[r];
@@ -2140,17 +2013,17 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 				for(int s=0;s<nstates;s++){
 					for(int r=0;r<nRateCats;r++){
 						La += prmat[(*Ldata)+16*r]  * partial[4*r]* rateProb[r];
-						D1a += d1mat[(*Ldata)+16*r] * partial[4*r]* rateProb[r];
+						D1a += d1mat[(*Ldata)+16*r] * partial[4*r]* rateProb[r];		
 						D2a += d2mat[(*Ldata)+16*r] * partial[4*r]* rateProb[r];
-
+											
 						Lc += prmat[(*Ldata+4)+16*r] * partial[1+4*r]* rateProb[r];
 						D1c += d1mat[(*Ldata+4)+16*r]* partial[1+4*r]* rateProb[r];
 						D2c += d2mat[(*Ldata+4)+16*r]* partial[1+4*r]* rateProb[r];
-
+											
 						Lg += prmat[(*Ldata+8)+16*r]* partial[2+4*r]* rateProb[r];
 						D1g += d1mat[(*Ldata+8)+16*r]* partial[2+4*r]* rateProb[r];
 						D2g += d2mat[(*Ldata+8)+16*r]* partial[2+4*r]* rateProb[r];
-
+						
 						Lt += prmat[(*Ldata+12)+16*r]* partial[3+4*r]* rateProb[r];
 						D1t += d1mat[(*Ldata+12)+16*r]* partial[3+4*r]* rateProb[r];
 						D2t += d2mat[(*Ldata+12)+16*r]* partial[3+4*r]* rateProb[r];
@@ -2174,20 +2047,16 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 			assert(La > 0.0f || Lc > 0.0f || Lg > 0.0f || Lt > 0.0f);
 			assert(La < 1.0e30 && Lc < 1.0e30 && Lg < 1.0e30 && Lt < 1.0e30);
 
-			FLOAT_TYPE tempD1 = (((D1a*freqs[0]+D1c*freqs[1]+D1g*freqs[2]+D1t*freqs[3])) / siteL);
 #ifdef SINGLE_PRECISION_FLOATS
+			FLOAT_TYPE tempD1 = (((D1a*freqs[0]+D1c*freqs[1]+D1g*freqs[2]+D1t*freqs[3])) / siteL);
 			if(fabs(tempD1) < 1.0e8f){
-				totL += (log(siteL) - partialCLA->underflow_mult[i]) * countit[i];
 				tot1+= countit[i] * tempD1;
 				FLOAT_TYPE siteD2=((D2a*freqs[0]+D2c*freqs[1]+D2g*freqs[2]+D2t*freqs[3]));
 				tot2 += countit[i] * ((siteD2 / siteL) - tempD1*tempD1);
 				}
-			//DEBUG
-			else{
-				outman.UserMessage("tempD1 = %f", tempD1);
-				}
 #else
 			totL += (log(siteL) - partialCLA->underflow_mult[i]) * countit[i];
+			FLOAT_TYPE tempD1 = (((D1a*freqs[0]+D1c*freqs[1]+D1g*freqs[2]+D1t*freqs[3])) / siteL);
 			tot1+= countit[i] * tempD1;
 			FLOAT_TYPE siteD2=((D2a*freqs[0]+D2c*freqs[1]+D2g*freqs[2]+D2t*freqs[3]));
 			tot2 += countit[i] * ((siteD2 / siteL) - tempD1*tempD1);
@@ -2205,16 +2074,7 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 				}
 			}
 #endif
-#ifdef LUMP_LIKES
-		if((i + 1) % LUMP_FREQ == 0){
-			grandSumL += totL;
-			totL = ZERO_POINT_ZERO;
-			}
 		}
-	totL += grandSumL;
-#else
-		}
-#endif
 
 	d1Tot = tot1;
 	d2Tot = tot2;
@@ -2225,7 +2085,7 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 	Score();
 	assert(FloatingPointEquals(lnL, poo, 1e-8));
 */	}
-
+	
 void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const FLOAT_TYPE *d1mat, const FLOAT_TYPE *d2mat, const char *Ldat, FLOAT_TYPE &d1Tot, FLOAT_TYPE &d2Tot){
 	//this function assumes that the pmat is arranged with nstates^2 entries for the
 	//first rate, followed by nstates^2 for the second, etc.
@@ -2249,7 +2109,7 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL=ZERO_POINT_ZERO, grandSumL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
+	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
 	FLOAT_TYPE siteL, siteD1, siteD2;
 
 #undef OUTPUT_DERIVS
@@ -2280,11 +2140,7 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 	if(nRateCats == 1){
 
 	#ifdef OMP_TERMDERIV_NSTATE
-		#ifdef LUMP_LIKES
-		#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2) reduction(+ : tot1, tot2, totL, grandSumL)
-		#else
 		#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2) reduction(+ : tot1, tot2, totL)
-		#endif
 		for(int i=0;i<nchar;i++){
 			Ldata = &Ldat[i];
 			partial = &partialCLA->arr[i*nstates*nRateCats];
@@ -2305,7 +2161,7 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 						siteD2 += d2mat[(*Ldata)+nstates*from] * partial[from] * freqs[from];
 						}
 					}
-
+					
 				else if(*Ldata == nstates){ //total ambiguity
 					for(int from=0;from<nstates;from++){
 						siteL += partial[from] * freqs[from];
@@ -2315,13 +2171,13 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 					assert(0);
 					}
 				siteL *= rateProb[0]; //multiply by (1-pinv)
-
+				
 				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					siteL += (prI*freqs[conStates[i]] * exp((FLOAT_TYPE)partialCLA->underflow_mult[i]));
 					}
-
+				
 				totL += (log(siteL) - partialCLA->underflow_mult[i]) * countit[i];
-
+				
 				siteD1 /= siteL;
 				tot1 += countit[i] * siteD1;
 				tot2 += countit[i] * ((siteD2 / siteL) - siteD1*siteD1);
@@ -2344,25 +2200,12 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 #endif
 				Ldata++;
 				}
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumL += totL;
-				totL = ZERO_POINT_ZERO;
-				}
 			}
-		totL += grandSumL;
-#else
-			}
-#endif
 		}
 	else{
 
 #ifdef OMP_TERMDERIV_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2) reduction(+ : tot1, tot2, totL, grandSumL)
-	#else
-	#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2) reduction(+ : tot1, tot2, totL)
-	#endif
+		#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2) reduction(+ : tot1, tot2, totL)
 		for(int i=0;i<nchar;i++){
 			Ldata = &Ldat[i];
 			partial = &partialCLA->arr[i*nstates*nRateCats];
@@ -2388,7 +2231,7 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 						partial += nstates;
 						}
 					}
-
+					
 				else{ //total ambiguity
 					for(int rate=0;rate<nRateCats;rate++){
 						for(int from=0;from<nstates;from++){
@@ -2419,16 +2262,7 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 #endif
 				Ldata++;
 				}
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumL += totL;
-				totL = ZERO_POINT_ZERO;
-				}
 			}
-		totL += grandSumL;
-#else
-			}
-#endif
 		}
 
 #ifdef OUTPUT_DERIVS
@@ -2469,7 +2303,7 @@ void Tree::GetDerivsPartialTerminalNStateRateHet(const CondLikeArray *partialCLA
 	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL=ZERO_POINT_ZERO, grandSumL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
+	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
 
 	FLOAT_TYPE siteL, siteD1, siteD2;
 	FLOAT_TYPE rateL, rateD1, rateD2;
@@ -2500,11 +2334,7 @@ void Tree::GetDerivsPartialTerminalNStateRateHet(const CondLikeArray *partialCLA
 #endif
 
 #ifdef OMP_TERMDERIV_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2, rateL, rateD1, rateD2) reduction(+ : tot1, tot2, totL, grandSumL)
-	#else
-	#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2, rateL, rateD1, rateD2) reduction(+ : tot1, tot2, totL)
-	#endif
+		#pragma omp parallel for private(partial, Ldata, siteL, siteD1, siteD2, rateL, rateD1, rateD2) reduction(+ : tot1, tot2, totL)
 		for(int i=0;i<nchar;i++){
 			Ldata = &Ldat[i];
 			partial = &partialCLA->arr[i*nstates*nRateCats];
@@ -2565,16 +2395,7 @@ void Tree::GetDerivsPartialTerminalNStateRateHet(const CondLikeArray *partialCLA
 #endif
 				Ldata++;
 				}
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumL += totL;
-				totL = ZERO_POINT_ZERO;
-				}
 			}
-		totL += grandSumL;
-#else
-			}
-#endif
 
 #ifdef OUTPUT_DERIVS
 	out.close();
@@ -2603,26 +2424,13 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 
 	const int *countit=data->GetCounts();
 	const FLOAT_TYPE *rateProb=mod->GetRateProbs();
-
+		
 	const int lastConst=data->LastConstant();
 	const int *conBases=data->GetConstStates();
-	const FLOAT_TYPE prI=mod->PropInvar();
+	const FLOAT_TYPE prI=mod->PropInvar();	
 
 	FLOAT_TYPE freqs[4];
 	for(int i=0;i<4;i++) freqs[i]=mod->StateFreq(i);
-
-#ifdef CUDA_GPU
-	if (cudaman->GetGPUDerivEnabled()) {
-		cudaman->ComputeGPUDeriv(partialCLA->arr, childCLA->arr,
-				partialCLA->underflow_mult, childCLA->underflow_mult, prmat,
-				d1mat, d2mat, rateProb, freqs, countit, conBases, lastConst,
-				mod->NoPinvInModel(), prI);
-
-		d1Tot = cudaman->GetDerivTots(1);
-		d2Tot = cudaman->GetDerivTots(2);
-		lnL = cudaman->GetDerivTots(0);
-	} else {
-#endif
 
 #ifdef UNIX
 	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
@@ -2634,14 +2442,10 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 	FLOAT_TYPE D1a, D1c, D1g, D1t;
 	FLOAT_TYPE D2a, D2c, D2g, D2t;
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
-	FLOAT_TYPE totL=ZERO_POINT_ZERO, grandSumL=ZERO_POINT_ZERO;
+	FLOAT_TYPE totL=ZERO_POINT_ZERO;
 
 #ifdef OMP_INTDERIV
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(La, Lc, Lg, Lt, D1a, D1c, D1g, D1t, D2a, D2c, D2g, D2t, partial, CL1, siteL) reduction(+ : tot1, tot2, totL, grandSumL)
-	#else
-	#pragma omp parallel for private(La, Lc, Lg, Lt, D1a, D1c, D1g, D1t, D2a, D2c, D2g, D2t, partial, CL1, siteL) reduction(+ : tot1, tot2, totL)
-	#endif
+#pragma omp parallel for private(La, Lc, Lg, Lt, D1a, D1c, D1g, D1t, D2a, D2c, D2g, D2t, partial, CL1, siteL) reduction(+ : tot1, tot2, totL)
 	for(int i=0;i<nchar;i++){
 		partial = &(partialCLA->arr[4*i*nRateCats]);
 		CL1		= &(childCLA->arr[4*i*nRateCats]);
@@ -2660,17 +2464,17 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 				Lc += ( prmat[rOff + 4]*CL1[0]+prmat[rOff + 5]*CL1[1]+prmat[rOff + 6]*CL1[2]+prmat[rOff + 7]*CL1[3]) * partial[1] * rateProb[r];
 				Lg += ( prmat[rOff + 8]*CL1[0]+prmat[rOff + 9]*CL1[1]+prmat[rOff + 10]*CL1[2]+prmat[rOff + 11]*CL1[3]) * partial[2] * rateProb[r];
 				Lt += ( prmat[rOff + 12]*CL1[0]+prmat[rOff + 13]*CL1[1]+prmat[rOff + 14]*CL1[2]+prmat[rOff + 15]*CL1[3]) * partial[3] * rateProb[r];
-
+				
 				D1a += ( d1mat[rOff ]*CL1[0]+d1mat[rOff + 1]*CL1[1]+d1mat[rOff + 2]*CL1[2]+d1mat[rOff + 3]*CL1[3]) * partial[0] * rateProb[r];
 				D1c += ( d1mat[rOff + 4]*CL1[0]+d1mat[rOff + 5]*CL1[1]+d1mat[rOff + 6]*CL1[2]+d1mat[rOff + 7]*CL1[3]) * partial[1] * rateProb[r];
 				D1g += ( d1mat[rOff + 8]*CL1[0]+d1mat[rOff + 9]*CL1[1]+d1mat[rOff + 10]*CL1[2]+d1mat[rOff + 11]*CL1[3]) * partial[2] * rateProb[r];
-				D1t += ( d1mat[rOff + 12]*CL1[0]+d1mat[rOff + 13]*CL1[1]+d1mat[rOff + 14]*CL1[2]+d1mat[rOff + 15]*CL1[3]) * partial[3] * rateProb[r];
+				D1t += ( d1mat[rOff + 12]*CL1[0]+d1mat[rOff + 13]*CL1[1]+d1mat[rOff + 14]*CL1[2]+d1mat[rOff + 15]*CL1[3]) * partial[3] * rateProb[r];		
 
 				D2a += ( d2mat[rOff ]*CL1[0]+d2mat[rOff + 1]*CL1[1]+d2mat[rOff + 2]*CL1[2]+d2mat[rOff + 3]*CL1[3]) * partial[0] * rateProb[r];
 				D2c += ( d2mat[rOff + 4]*CL1[0]+d2mat[rOff + 5]*CL1[1]+d2mat[rOff + 6]*CL1[2]+d2mat[rOff + 7]*CL1[3]) * partial[1] * rateProb[r];
 				D2g += ( d2mat[rOff + 8]*CL1[0]+d2mat[rOff + 9]*CL1[1]+d2mat[rOff + 10]*CL1[2]+d2mat[rOff + 11]*CL1[3]) * partial[2] * rateProb[r];
 				D2t += ( d2mat[rOff + 12]*CL1[0]+d2mat[rOff + 13]*CL1[1]+d2mat[rOff + 14]*CL1[2]+d2mat[rOff + 15]*CL1[3]) * partial[3] * rateProb[r];
-
+				
 				partial+=4;
 				CL1+=4;
 				}
@@ -2690,7 +2494,6 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 			if(fabs(tempD1) < 1.0e8f){
 				assert(d1Tot == d1Tot);
 				FLOAT_TYPE siteD2=((D2a*freqs[0]+D2c*freqs[1]+D2g*freqs[2]+D2t*freqs[3]));
-				totL += (log(siteL) - childCLA->underflow_mult[i] - partialCLA->underflow_mult[i]) * countit[i];
 				tot1 += countit[i] * tempD1;
 				tot2 += countit[i] * ((siteD2 / siteL) - tempD1*tempD1);
 				}
@@ -2707,27 +2510,13 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 #ifndef OMP_INTDERIV
 		else{
 	//		partial+=4*nRateCats;
-	//		CL1+=4*nRateCats;
+	//		CL1+=4*nRateCats;			
 			}
 #endif
-#ifdef LUMP_LIKES
-		if((i + 1) % LUMP_FREQ == 0){
-			grandSumL += totL;
-			totL = ZERO_POINT_ZERO;
-			}
 		}
-	totL += grandSumL;
-#else
-		}
-#endif
-
 	d1Tot = tot1;
 	d2Tot = tot2;
 	lnL = totL;
-
-#ifdef CUDA_GPU
-	}
-#endif
 
 /*
 	double poo = lnL;
@@ -2751,41 +2540,24 @@ void Tree::GetDerivsPartialInternalNStateRateHet(const CondLikeArray *partialCLA
 
 	const int lastConst=data->LastConstant();
 	const int *conStates=data->GetConstStates();
-	const FLOAT_TYPE prI=mod->PropInvar();
+	const FLOAT_TYPE prI=mod->PropInvar();	
 
 	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
 	for(int i=0;i<nstates;i++) freqs[i]=mod->StateFreq(i);
-
-#ifdef CUDA_GPU
-	if (cudaman->GetGPUDerivEnabled()) {
-		cudaman->ComputeGPUDeriv(partialCLA->arr, childCLA->arr,
-				partialCLA->underflow_mult, childCLA->underflow_mult, prmat,
-				d1mat, d2mat, rateProb, freqs, countit, conStates, lastConst,
-				mod->NoPinvInModel(), prI);
-
-		d1Tot = cudaman->GetDerivTots(1);
-		d2Tot = cudaman->GetDerivTots(2);
-		lnL = cudaman->GetDerivTots(0);
-	} else {
-#endif
 
 #ifdef UNIX
 	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL = ZERO_POINT_ZERO, grandSumL = ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
+	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL = ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
 
 	FLOAT_TYPE siteL, siteD1, siteD2;
 	FLOAT_TYPE tempL, tempD1, tempD2;
 	FLOAT_TYPE rateL, rateD1, rateD2;
 
 #ifdef OMP_INTDERIV_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(siteL, siteD1, siteD2, tempL, tempD1, tempD2, rateL, rateD1, rateD2, partial, CL1) reduction(+ : tot1, tot2, totL, grandSumL)
-	#else
 	#pragma omp parallel for private(siteL, siteD1, siteD2, tempL, tempD1, tempD2, rateL, rateD1, rateD2, partial, CL1) reduction(+ : tot1, tot2, totL)
-	#endif
 	for(int i=0;i<nchar;i++){
 		partial = &(partialCLA->arr[nRateCats * nstates * i]);
 		CL1		= &(childCLA->arr[nRateCats * nstates * i]);
@@ -2830,25 +2602,11 @@ void Tree::GetDerivsPartialInternalNStateRateHet(const CondLikeArray *partialCLA
 			assert(tot1 == tot1);
 			assert(tot2 == tot2);
 			}
-#ifdef LUMP_LIKES
-		if((i + 1) % LUMP_FREQ == 0){
-			grandSumL += totL;
-			totL = ZERO_POINT_ZERO;
-			}
 		}
-	totL += grandSumL;
-#else
-		}
-#endif
 
 	d1Tot = tot1;
 	d2Tot = tot2;
 	lnL = totL;
-
-#ifdef CUDA_GPU
-	}
-#endif
-
 	delete []freqs;
 
 /*	double poo = lnL;
@@ -2872,40 +2630,23 @@ void Tree::GetDerivsPartialInternalNState(const CondLikeArray *partialCLA, const
 
 	const int lastConst=data->LastConstant();
 	const int *conStates=data->GetConstStates();
-	const FLOAT_TYPE prI=mod->PropInvar();
+	const FLOAT_TYPE prI=mod->PropInvar();	
 
 	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
 	for(int i=0;i<nstates;i++) freqs[i]=mod->StateFreq(i);
-
-#ifdef CUDA_GPU
-	if (cudaman->GetGPUDerivEnabled()) {
-		cudaman->ComputeGPUDeriv(partialCLA->arr, childCLA->arr,
-				partialCLA->underflow_mult, childCLA->underflow_mult, prmat,
-				d1mat, d2mat, rateProb, freqs, countit, conStates, lastConst,
-				mod->NoPinvInModel(), prI);
-
-		d1Tot = cudaman->GetDerivTots(1);
-		d2Tot = cudaman->GetDerivTots(2);
-		lnL = cudaman->GetDerivTots(0);
-	} else {
-#endif
 
 #ifdef UNIX
 	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL = ZERO_POINT_ZERO, grandSumL = ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
+	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL = ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
 
 	FLOAT_TYPE siteL, siteD1, siteD2;
 	FLOAT_TYPE tempL, tempD1, tempD2;
 
 #ifdef OMP_INTDERIV_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(siteL, siteD1, siteD2, tempL, tempD1, tempD2, partial, CL1) reduction(+ : tot1, tot2, totL, grandSumL)
-	#else
-	#pragma omp parallel for private(siteL, siteD1, siteD2, tempL, tempD1, tempD2, partial, CL1) reduction(+ : tot1, tot2, totL)
-	#endif
+#pragma omp parallel for private(siteL, siteD1, siteD2, tempL, tempD1, tempD2, partial, CL1) reduction(+ : tot1, tot2, totL)
 	for(int i=0;i<nchar;i++){
 		partial = &(partialCLA->arr[nstates*i]);
 		CL1		= &(childCLA->arr[nstates*i]);
@@ -2945,25 +2686,11 @@ void Tree::GetDerivsPartialInternalNState(const CondLikeArray *partialCLA, const
 			partial += nstates;
 			CL1 += nstates;
 			}
-#ifdef LUMP_LIKES
-		if((i + 1) % LUMP_FREQ == 0){
-			grandSumL += totL;
-			totL = ZERO_POINT_ZERO;
-			}
 		}
-	totL += grandSumL;
-#else
-		}
-#endif
 
 	d1Tot = tot1;
 	d2Tot = tot2;
 	lnL = totL;
-
-#ifdef CUDA_GPU
-	}
-#endif
-
 	delete []freqs;
 
 /*
@@ -3000,14 +2727,14 @@ void Tree::GetDerivsPartialInternalEQUIV(const CondLikeArray *partialCLA, const 
 	FLOAT_TYPE eD2a, eD2c, eD2g, eD2t;
 
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
-
+	
 	const int *countit=data->GetCounts();
 	const FLOAT_TYPE *rateProb=mod->GetRateProbs();
 	assert(nRateCats  == 1);
 
 	const int lastConst=data->LastConstant();
 	const int *conBases=data->GetConstStates();
-	const FLOAT_TYPE prI=mod->PropInvar();
+	const FLOAT_TYPE prI=mod->PropInvar();	
 
 	FLOAT_TYPE freqs[4];
 	for(int i=0;i<4;i++) freqs[i]=mod->StateFreq(i);
@@ -3020,11 +2747,11 @@ void Tree::GetDerivsPartialInternalEQUIV(const CondLikeArray *partialCLA, const 
 				eLc = ( prmat[rOff + 4]*CL1[0]+prmat[rOff + 5]*CL1[1]+prmat[rOff + 6]*CL1[2]+prmat[rOff + 7]*CL1[3])  * rateProb[0];
 				eLg = ( prmat[rOff + 8]*CL1[0]+prmat[rOff + 9]*CL1[1]+prmat[rOff + 10]*CL1[2]+prmat[rOff + 11]*CL1[3])  * rateProb[0];
 				eLt = ( prmat[rOff + 12]*CL1[0]+prmat[rOff + 13]*CL1[1]+prmat[rOff + 14]*CL1[2]+prmat[rOff + 15]*CL1[3])  * rateProb[0];
-
+				
 				eD1a = ( d1mat[rOff ]*CL1[0]+d1mat[rOff + 1]*CL1[1]+d1mat[rOff + 2]*CL1[2]+d1mat[rOff + 3]*CL1[3])  * rateProb[0];
 				eD1c = ( d1mat[rOff + 4]*CL1[0]+d1mat[rOff + 5]*CL1[1]+d1mat[rOff + 6]*CL1[2]+d1mat[rOff + 7]*CL1[3])  * rateProb[0];
 				eD1g = ( d1mat[rOff + 8]*CL1[0]+d1mat[rOff + 9]*CL1[1]+d1mat[rOff + 10]*CL1[2]+d1mat[rOff + 11]*CL1[3])  * rateProb[0];
-				eD1t = ( d1mat[rOff + 12]*CL1[0]+d1mat[rOff + 13]*CL1[1]+d1mat[rOff + 14]*CL1[2]+d1mat[rOff + 15]*CL1[3])  * rateProb[0];
+				eD1t = ( d1mat[rOff + 12]*CL1[0]+d1mat[rOff + 13]*CL1[1]+d1mat[rOff + 14]*CL1[2]+d1mat[rOff + 15]*CL1[3])  * rateProb[0];		
 
 				eD2a = ( d2mat[rOff ]*CL1[0]+d2mat[rOff + 1]*CL1[1]+d2mat[rOff + 2]*CL1[2]+d2mat[rOff + 3]*CL1[3])  * rateProb[0];
 				eD2c = ( d2mat[rOff + 4]*CL1[0]+d2mat[rOff + 5]*CL1[1]+d2mat[rOff + 6]*CL1[2]+d2mat[rOff + 7]*CL1[3])  * rateProb[0];
@@ -3048,7 +2775,7 @@ void Tree::GetDerivsPartialInternalEQUIV(const CondLikeArray *partialCLA, const 
 
 			partial+=4;
 			CL1+=4;
-
+			
 			if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 				FLOAT_TYPE	btot=ZERO_POINT_ZERO;
 				if(conBases[i]&1) btot+=freqs[0];
@@ -3079,7 +2806,7 @@ void Tree::GetDerivsPartialInternalEQUIV(const CondLikeArray *partialCLA, const 
 			}
 		else{
 			partial+=4*nRateCats;
-			CL1+=4*nRateCats;
+			CL1+=4*nRateCats;			
 			}
 		}
 	d1Tot = tot1;

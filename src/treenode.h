@@ -75,7 +75,8 @@ class TreeNode{
 		void FlipBlensToRoot(TreeNode *from);
 		void FlipBlensToNode(TreeNode *from, TreeNode *stopNode);
 		void RecursivelyAddOrRemoveSubtreeFromBipartitions(const Bipartition &subtree);
-		void CollapseMinLengthBranches(int &);
+		void CollapseMinLengthBranches();
+
 		//misc functions
 		char *MakeNewick(char *s, bool internalNodes, bool branchLengths, bool highPrec=false) const;
 		void MakeNewickForSubtree(char *s) const;
@@ -115,7 +116,6 @@ class TreeNode{
 		void FindCrazyShortBranches();
 		void CheckTreeFormation();
 		void OutputNodeConnections();
-
 };
 
 inline void TreeNode::CopyOneClaIndex(const TreeNode *from, ClaManager *claMan, int dir){

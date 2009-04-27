@@ -42,7 +42,6 @@
 #include "garlireader.h"
 #include "outputman.h"
 #include "errorexception.h"
-#include "model.h"
 #include <sstream>
 
 int GARLI_main( int argc, char* argv[] );
@@ -65,7 +64,7 @@ MyNexusToken::MyNexusToken(
 void MyNexusToken::OutputComment(
   const NxsString &msg)	/* the output comment to be displayed */
 	{
-	size_t pos;
+	unsigned pos;
 	string s;
 	//changing this again - just eating the Garli output comments
 	s = "GarliScore";
@@ -99,7 +98,12 @@ void MyNexusToken::OutputComment(
 */
 GarliReader::GarliReader()
 	{
-	//none of these besides garliBlock are being used anymore
+	id				= "GARLI";
+
+	// Make sure all data members that are pointers are initialized to NULL!
+	// Failure to do this will result in problems because functions such as
+	// FactoryDefaults() will try to delete an object if it is non-NULL.
+	//
 	taxa			= NULL;
 	trees			= NULL;
 	assumptions		= NULL;
@@ -107,10 +111,29 @@ GarliReader::GarliReader()
 	characters		= NULL;
 	data			= NULL;
 	next_command	= NULL;
+
+	FactoryDefaults();
 	
-	
-	garliBlock		= NULL;
-	ClearContent();
+	//moved all of this allocation to FactoryDefaults
+	/*
+	taxa			= new NxsTaxaBlock();
+	trees			= new NxsTreesBlock(taxa);
+#if defined(NCL_MAJOR_VERSION) && (NCL_MAJOR_VERSION >= 2) && (NCL_MINOR_VERSION >= 1)
+	trees->SetAllowImplicitNames(true);
+#endif
+	assumptions		= new NxsAssumptionsBlock(taxa);
+	characters		= new NxsCharactersBlock(taxa, assumptions);
+	distances		= new NxsDistancesBlock(taxa);
+	data			= new NxsDataBlock(taxa, assumptions);
+
+	Add(taxa);
+	Add(trees);
+	Add(assumptions);
+	Add(characters);
+	Add(distances);
+	Add(data);
+	Add(this);
+*/
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
@@ -118,54 +141,13 @@ GarliReader::GarliReader()
 */
 GarliReader::~GarliReader()
 	{
-	//this is a little odd, since ClearContent will reallocate a few things, but 
-	//it also ensures that a bunch of other things are deleted
-	ClearContent();
-
 	assert(next_command != NULL);
 	delete [] next_command;
 
 	if (logf_open)
 		logf.close();
-	
-	if(garliBlock != NULL){
-		Detach(garliBlock);
-		delete garliBlock;
-		garliBlock = NULL;
-		}
 	}
 
-//DJZ THIS WAS ADDED DIRECTLY FROM NxsReader, since Public Reader apparently deprecates this old API and
-//Add just asserts zero there.
-/*----------------------------------------------------------------------------------------------------------------------
-|	Adds `newBlock' to the end of the list of NxsBlock objects growing from `blockList'. If `blockList' points to NULL,
-|	this function sets `blockList' to point to `newBlock'. Calls SetNexus method of `newBlock' to inform `newBlock' of
-|	the NxsReader object that now owns it. This is useful when the `newBlock' object needs to communicate with the 
-|	outside world through the NxsReader object, such as when it issues progress reports as it is reading the contents
-|	of its block.
-*/
-/*
-void GarliReader::Add(
-  NxsBlock *newBlock)	// a pointer to an existing block object
-	{
-	assert(newBlock != NULL);
-
-	newBlock->SetNexus(this);
-
-	if (!blockList)
-		blockList = newBlock;
-	else
-		{
-		// Add new block to end of list
-		//
-		NxsBlock *curr;
-		for (curr = blockList; curr && curr->next;)
-			curr = curr->next;
-		assert(curr && !curr->next);
-		curr->next = newBlock;
-		}
-	}
-*/
 /*----------------------------------------------------------------------------------------------------------------------
 |	The code here is identical to the base class version (simply returns 0), so the code here should either be 
 |	modified or this derived version eliminated altogether. Under what circumstances would you need to modify the 
@@ -175,7 +157,7 @@ void GarliReader::Add(
 |	return the character index in the range [1..`nchar']; i.e., add one to the 0-offset index.
 */
 unsigned GarliReader::CharLabelToNumber(
-  NxsString) const /* the character label to be translated to character number */
+  NxsString)	/* the character label to be translated to character number */
 	{
 	return 0;
 	}
@@ -194,10 +176,22 @@ bool GarliReader::EnteringBlock(
 	message += " block...";
 	PrintMessage(false);
 
+	if(blockName.Equals("CHARACTERS")){
+		if(characters->IsEmpty() == false){
+			charBlocks.push_back(characters);
+			NxsCharactersBlock *newchar	= new NxsCharactersBlock(taxa, assumptions);
+			Reassign(characters, newchar);
+			characters = newchar;
+			currBlock = characters;
+			}
+		}
+	else if(blockName.Equals("ASSUMPTIONS") && charBlocks.empty() == false){
+		outman.UserMessage("\n\nWARNING:Assumptions block found with multiple characters blocks.\n\tCheck output carefully to ensure that any excluded characters\n\twere applied to the correct characters block.\n\tThe correct exclusion format in an Assumptions block is this:\n\tEXSET * UNTITLED = 10-11;\n\tBut it will only be applied to the LAST characters block in the file.\n\tYou may want to comment out unused characters blocks.\n");
+		}
 	//3/25/08 if we already found a Garli block with a model (e.g. in the dataset file)
 	//we should crap out, since we don't know which one the user meant to use
 	//this is a change from previous behavior, in which I wanted the second to just override the first.
-	if(blockName.Equals("GARLI") && FoundModelString())
+	else if(blockName.Equals("GARLI") && FoundModelString())
 		throw ErrorException("Multiple GARLI blocks found (possibly in multiple files).\n\tRemove or comment out all but one.");
 
 	return true;
@@ -239,42 +233,22 @@ void GarliReader::ExitingBlock(
 	outman.UserMessage(mess);
 	}
 
-//This used to be the FactoryDefaults function, but was changes to be consistent with
-//the higher level functions in PublicReader.  It clears out/resets everything that 
-//was in the reader AND gets the reader ready to do further reading - thus it is
-//a function that returns the reader to the state it was just after allocation.  It
-//is NOT a deallocater, although it will properly deallocate things if necessary
-//to get back to the initial state
-void GarliReader::ClearContent()
+/*----------------------------------------------------------------------------------------------------------------------
+|	Sets all data members to their factory default settings: `inf_open', `logf_open' and `quit_now' are set to false; 
+|	`message' to the null string, and the pointers `data', `characters', `assumptions', `taxa' and `trees' 
+|	are all set to NULL. The C-string `next_command' is allocated COMMAND_MAXLEN + 1 bytes if it is currently NULL, 
+|	and its first byte is set to the null character to create an empty `next_command' string.
+*/
+void GarliReader::FactoryDefaults()
 	{
-	DeleteBlocksFromFactories();
-	MultiFormatReader::ClearContent();
+	isEmpty = true;
 	inf_open = false;
 	logf_open = false;
 	quit_now = false;
 	message.clear();
-	//tell the reader to nuke identical taxa blocks, which could be created by reading a data/characters block
-	//and then another file with a trees block and taxa block
-	cullIdenticalTaxaBlocks();
-	treesBlockTemplate->SetAllowImplicitNames(true);
 
-	if(garliBlock != NULL){
-		Detach(garliBlock);
-		delete garliBlock;
-		garliBlock = NULL;
-		}
-
-	garliBlock = new GarliBlock();
-	Add(garliBlock);
-
-	if (next_command == NULL)
-		next_command = new char[COMMAND_MAXLEN + 1];
-	next_command[0] = '\0';
-
-	//none of the following should be getting used, but delete just in case
 	if (trees != NULL)
 		{
-		assert(0);
 		Detach(trees);
 		delete trees;
 		trees = NULL;
@@ -282,7 +256,6 @@ void GarliReader::ClearContent()
 
 	if (taxa != NULL)
 		{
-		assert(0);
 		Detach(taxa);
 		delete taxa;
 		taxa = NULL;
@@ -304,139 +277,62 @@ void GarliReader::ClearContent()
 
 	if (characters != NULL)
 		{
-		assert(0);
 		Detach(characters);
 		delete characters;
 		characters = NULL;
 		}
 
+	if (charBlocks.size() > 0)
+		{
+		for(vector<NxsCharactersBlock*>::iterator it = charBlocks.begin();it != charBlocks.end(); it++){
+//			Detach(*it);
+			delete *it;
+//			charBlocks.erase(it);
+			}
+		charBlocks.clear();
+		}
 	if (data != NULL)
 		{
-		assert(0);
 		Detach(data);
 		delete data;
 		data = NULL;
 		}
-	}
+	//"this" (the garli reader itself) is added to the block list to provide support for Garli blocks.
+	//we can't delete it, but need to detach it
+	Detach(this);
 
-	//DJZ this is my function, replacing an old one that appeared in funcs.cpp
-	//simpler now, since it uses NxsMultiFormatReader
-bool GarliReader::ReadData(const char* filename, const ModelSpecification &modspec){
-	//first use a few of my crappy functions to try to diagnose the type of file and data
-	//then call the NxsMultiFormatReader functions to process it
-	if (!FileExists(filename))	{
-		throw ErrorException("data file not found: %s!", filename);
-		}
-	//if it is Nexus, don't need to specify anything else in advance
-	if(FileIsNexus(filename)){
-		outman.UserMessage("Attempting to read data file in Nexus format (using NCL):\n\t%s ...", filename);
-		ReadFilepath(filename, NEXUS_FORMAT);
-		}
-	else{//if this isn't nexus we'll try a bunch of formats to see if we can get something to work
-		//the idea here is that we create an ordered list of formats to try, then we try them 
-		typedef pair<MultiFormatReader::DataFormatType, NxsString> FormatPair;
-		list<FormatPair> formatsToTry;
-		NxsString name;
-		if(FileIsFasta(filename)){
-			if(modspec.IsAminoAcid()){
-				formatsToTry.push_back(FormatPair(FASTA_AA_FORMAT, "Fasta amino acid"));
-				}
-			else{
-				if(modSpec.IsRna() == false)
-					formatsToTry.push_back(FormatPair(FASTA_DNA_FORMAT, "Fasta DNA"));
-				formatsToTry.push_back(FormatPair(FASTA_RNA_FORMAT, "Fasta RNA"));
-				}
-			}
-		else{//otherwise assume phylip format
-			if(modSpec.IsAminoAcid()){
-				formatsToTry.push_back(FormatPair(RELAXED_PHYLIP_AA_FORMAT, "relaxed Phylip amino acid"));
-				formatsToTry.push_back(FormatPair(INTERLEAVED_RELAXED_PHYLIP_AA_FORMAT, "interleaved relaxed Phylip amino acid"));
-				formatsToTry.push_back(FormatPair(PHYLIP_AA_FORMAT, "strict Phylip amino acid"));
-				formatsToTry.push_back(FormatPair(INTERLEAVED_PHYLIP_AA_FORMAT, "interleaved strict Phylip amino acid"));
-				}
-			else{
-				if(modSpec.IsRna() == false){
-					formatsToTry.push_back(FormatPair(RELAXED_PHYLIP_DNA_FORMAT, "relaxed Phylip DNA"));
-					formatsToTry.push_back(FormatPair(INTERLEAVED_RELAXED_PHYLIP_DNA_FORMAT, "interleaved relaxed Phylip DNA"));
-					formatsToTry.push_back(FormatPair(PHYLIP_DNA_FORMAT, "strict Phylip DNA"));
-					formatsToTry.push_back(FormatPair(INTERLEAVED_PHYLIP_DNA_FORMAT, "interleaved strict Phylip DNA"));
-					}
+	if (next_command == NULL)
+		next_command = new char[COMMAND_MAXLEN + 1];
+	next_command[0] = '\0';
 
-				formatsToTry.push_back(FormatPair(RELAXED_PHYLIP_RNA_FORMAT, "relaxed Phylip RNA"));
-				formatsToTry.push_back(FormatPair(INTERLEAVED_RELAXED_PHYLIP_RNA_FORMAT, "interleaved relaxed Phylip RNA"));
-				formatsToTry.push_back(FormatPair(PHYLIP_RNA_FORMAT, "strict Phylip RNA"));
-				formatsToTry.push_back(FormatPair(INTERLEAVED_PHYLIP_RNA_FORMAT, "interleaved strict Phylip RNA"));
-				}
-			}
-		//now start trying formats
-		bool success;
-		for(list<FormatPair>::iterator formIt = formatsToTry.begin();formIt != formatsToTry.end();formIt++){
-			success = true;
-			try{
-				outman.UserMessage("Attempting to read data file %s as\n\t%s format (using NCL) ...", filename, (*formIt).second.c_str());
-				ReadFilepath(filename, (*formIt).first);
-				}catch(NxsException err){
-					NexusError(err.msg, err.pos, err.line, err.col, false);
-					outman.UserMessage("Problem reading data file as %s format...\n", (*formIt).second.c_str());
-					success = false;
-					}
-			if(success) break;
-			}
-		if(success == false)
-			throw ErrorException("\nUnable to read data file %s in any format.\n", filename);
-		else 
-			outman.UserMessage("\nData read successfully.");
-		}
-	return true;
-	}
+	//moved all of this allocation to here from the constructor - otherwise calling FactoryDefaults
+	//just makes the GarliReader empty
+	taxa			= new NxsTaxaBlock();
+	trees			= new NxsTreesBlock(taxa);
+#if defined(NCL_MAJOR_VERSION) && (NCL_MAJOR_VERSION >= 2) && (NCL_MINOR_VERSION >= 1)
+	trees->SetAllowImplicitNames(true);
+#endif
+	assumptions		= new NxsAssumptionsBlock(taxa);
+	characters		= new NxsCharactersBlock(taxa, assumptions);
+	distances		= new NxsDistancesBlock(taxa);
+	data			= new NxsDataBlock(taxa, assumptions);
 
-//verifies that we got the right number/type of blocks and returns the Characters block to be used
-const NxsCharactersBlock *GarliReader::CheckBlocksAndGetCorrectCharblock(const ModelSpecification &modspec) const{
-	const int numTaxaBlocks = GetNumTaxaBlocks();
-	if(numTaxaBlocks > 1) 
-		throw ErrorException("Either more than one taxa block was found in the data file\n\tor multiple blocks had different taxon sets.");
-	else if(numTaxaBlocks == 0)
-		throw ErrorException("No taxa information was provided by NCL.\n\tThere may have been a problem reading the data file.\n\tCheck output above.");
-	const NxsTaxaBlock *taxablock = GetTaxaBlock(0);
-	const int numCharBlocks = GetNumCharactersBlocks(taxablock);
-	outman.UserMessageNoCR("");
-	if(numCharBlocks == 0)
-		throw ErrorException("No character data was provided by NCL. There may have been a problem reading\n\tthe data file, or the data was of the wrong type. Check output above.");
-	
-	//now check that we only have one of the charblock types that we want
-	int correctIndex = -1;
-	for(int c = 0;c < GetNumCharactersBlocks(taxablock);c++){
-		const NxsCharactersBlock *charblock = GetCharactersBlock(taxablock, c);
-		if((charblock->GetDataType() == NxsCharactersBlock::dna || charblock->GetDataType() == NxsCharactersBlock::nucleotide)
-			&& (modSpec.IsNucleotide() || modSpec.IsCodon() || modSpec.IsCodonAminoAcid())){
-			if(correctIndex > -1) throw ErrorException("More than one block containing nucleotide data was found.");
-			else correctIndex = c;
-			}
-		//rna data is not allowed as input for codon or codon-aminoacid analyses
-		else if(charblock->GetDataType() == NxsCharactersBlock::rna && (modSpec.IsNucleotide() || modSpec.IsRna())){
-			if(correctIndex > -1) throw ErrorException("More than one block containing nucleotide data was found.");
-			else correctIndex = c;
-			}
-		else if(charblock->GetDataType() == NxsCharactersBlock::protein && (modSpec.IsAminoAcid())){
-			if(correctIndex > -1) throw ErrorException("More than one block containing amino acid (protein) data was found.");
-			else correctIndex = c;
-			}
-		}
-	if(correctIndex == -1){
-		if(modSpec.IsNucleotide()) throw ErrorException("A data file was read, but no nucleotide data was found.");
-		else if(modSpec.IsRna()) throw ErrorException("A data file was read, but no RNA data was found.");
-		else if(modSpec.IsAminoAcid()) throw ErrorException("A data file was read, but no amino acid (protein) data was found.");
-		else if(modSpec.IsCodon()) throw ErrorException("DNA data is required as input for codon models.\n\tA data file was read, but none was found.");
-		else if(modSpec.IsCodonAminoAcid()) throw ErrorException("DNA data is required as input for codon translated amino acid models.\n\tA data file was read, but none was found.");
-		}
-	return GetCharactersBlock(taxablock, correctIndex);
+	Add(taxa);
+	Add(trees);
+	Add(assumptions);
+	Add(characters);
+	Add(distances);
+	Add(data);
+	Add(this);
+
+	modelString = "";
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
 |	Returns true if file named `fn' already exists, false otherwise.
 */
 bool GarliReader::FileExists(
-  const char *fn) const	/* the name of the file to check */
+  const char *fn)	/* the name of the file to check */
 	{
 	bool exists = false;
 
@@ -449,78 +345,6 @@ bool GarliReader::FileExists(
 
 	return exists;
 	}
-
-//DJZ there are my crappy functions to try to diagnose file type
-bool GarliReader::FileIsNexus(const char *name) const{
-	if (!FileExists(name))	{
-		throw ErrorException("could not open file: %s!", name);
-		}
-
-	bool nexus = false;
-	FILE *inf;
-#ifdef BOINC
-	inf = boinc_fopen(name, "r");
-#else
-	inf = fopen(name, "r");
-#endif
-	char buf[1024];
-	GetToken(inf, buf, 1024);
-	if(!(_stricmp(buf, "#NEXUS"))) nexus = true;
-
-	fclose(inf);
-	return nexus;
-	}
-
-bool GarliReader::FileIsFasta(const char *name) const{
-	if (!FileExists(name))	{
-		throw ErrorException("could not open file: %s!", name);
-		}
-
-	bool fasta = false;
-	FILE *inf;
-#ifdef BOINC
-	inf = boinc_fopen(name, "r");
-#else
-	inf = fopen(name, "r");
-#endif
-	char buf[1024];
-	GetToken(inf, buf, 1024);
-	if(buf[0] == '>') fasta = true;
-
-	fclose(inf);
-	return fasta;
-	}
-
-int GarliReader::GetToken( FILE *in, char* tokenbuf, int maxlen) const{
-	int ok = 1;
-
-	int i;
-	char ch = ' ';
-
-	// skip leading whitespace
-	while( in && ( isspace(ch) || ch == '[' ) ){
-		ch = getc(in);
-		}
-	if( !in ) return 0;
-
-	tokenbuf[0] = ch;
-	tokenbuf[1] = '\0';
-	tokenbuf[maxlen-1] = '\0';
-		
-	for( i = 1; i < maxlen-1; i++ ) {
-		ch = getc(in);
-		if( isspace(ch) || ch == ']' )
-			break;
-		tokenbuf[i] = ch;
-		tokenbuf[i+1] = '\0';
-	}
-
-	if( i >= maxlen-1 )
-		ok = 0;
-
-	return ok;
-}
-
 
 /*----------------------------------------------------------------------------------------------------------------------
 |	Called whenever a file name needs to be read from either the command line or a file. Expects next token to be "=" 
@@ -558,7 +382,7 @@ NxsString GarliReader::GetFileName(
 |	Called when the END or ENDBLOCK command needs to be parsed from within the GarliReader block. Basically just 
 |	checks to make sure the next token in the data file is a semicolon.
 */
-void GarliBlock::HandleEndblock(
+void GarliReader::HandleEndblock(
   NxsToken &token)	/*  the token used to read from `in' */
 	{
 	// Get the semicolon following END or ENDBLOCK token
@@ -614,6 +438,8 @@ void GarliReader::HandleExecute(
 		cerr << endl;
 		cerr << "Opening " << fn << "..." << endl;
 
+		PurgeBlocks();
+
 		ifstream inf(fn.c_str(), ios::binary | ios::in);
 
 		inf_open = true;
@@ -660,6 +486,8 @@ int GarliReader::HandleExecute(const char *filename, bool purge)
 
 	if (FileExists(fn.c_str()))
 		{
+		if(purge) PurgeBlocks();
+
 		ifstream inf(fn.c_str(), ios::binary | ios::in);
 
 		inf_open = true;
@@ -743,9 +571,11 @@ void GarliReader::HandleGarliReader(
 	
 	}
 
-/*This would need to be rewritten for the new Factory/Multiformat system
+/*----------------------------------------------------------------------------------------------------------------------
+|	Called when the HELP command needs to be parsed from within the GarliReader block.
+*/
 void GarliReader::HandleShow(
-  NxsToken &token)	
+  NxsToken &token)	/* the token used to read from `in' */
 	{
 	// Retrieve all tokens for this command, stopping only in the event
 	// of a semicolon or an unrecognized keyword
@@ -825,7 +655,7 @@ void GarliReader::HandleShow(
 			data->Report(logf);
 		}
 	}
-*/
+
 /*----------------------------------------------------------------------------------------------------------------------
 |	Called when the LOG command needs to be parsed from within the GarliReader block.
 */
@@ -981,7 +811,6 @@ void GarliReader::HandleLog(
 |	Accepts a string in the form of a GarliReader block containing one command and processes it just like a real 
 |	GarliReader block in a NEXUS data file.
 */
-	
 void GarliReader::HandleNextCommand()
 	{
 	std::istringstream cmdin(next_command);
@@ -989,8 +818,7 @@ void GarliReader::HandleNextCommand()
 	MyNexusToken token(cmdin);
 	try
 		{
-		assert(garliBlock);
-		garliBlock->Read(token);
+		Read(token);
 		}
 	catch(NxsException x) 
 		{
@@ -1006,8 +834,7 @@ void GarliReader::NexusError(
   NxsString msg,	/* the error message */
   file_pos ,		/* the point in the NEXUS file where the error occurred */
   long line,		/* the line in the NEXUS file where the error occurred */
-  long col,			/* the column in the NEXUS file where the error occurred */
-  bool throwExcept /*=true*/)	/* whether to throw an actual exception or just output the error message */
+  long col)			/* the column in the NEXUS file where the error occurred */
 	{
 	message = "\n";
 	message += msg;
@@ -1023,8 +850,7 @@ void GarliReader::NexusError(
 		message += col;
 		PrintMessage();
 		}
-	if(throwExcept)
-		throw ErrorException("NCL encountered a problem reading the dataset.");
+	throw ErrorException("NCL encountered a problem reading the dataset.");
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
@@ -1098,11 +924,65 @@ void GarliReader::PrintMessage(
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
+|	Detaches all blocks, deletes them, creates new blocks, and finally adds the new blocks. Call this function if
+|	you want to be sure that there is no data currently stored in any blocks.
+*/
+void GarliReader::PurgeBlocks()
+	{
+	if (blockList != NULL)
+		{
+		Detach(taxa);
+		Detach(trees);
+		Detach(assumptions);
+		Detach(distances);
+		Detach(characters);
+		Detach(data);
+		//"this" (the garli reader itself) is added to the block list to provide support for Garli blocks.
+		//we can't delete it, but need to detach it
+		Detach(this);
+		}
+
+	delete taxa;
+	delete trees;
+	delete assumptions;
+	delete distances;
+	delete characters;
+	if (charBlocks.size() > 0)
+		{
+		for(vector<NxsCharactersBlock*>::iterator it = charBlocks.begin();it != charBlocks.end(); it++){
+//			Detach(*it);
+			delete *it;
+//			charBlocks.erase(it);
+			}
+		charBlocks.clear();
+		}
+	delete data;
+
+	taxa		= new NxsTaxaBlock();
+	trees		= new NxsTreesBlock(taxa);
+#if defined(NCL_MAJOR_VERSION) && (NCL_MAJOR_VERSION >= 2) && (NCL_MINOR_VERSION >= 1)
+	trees->SetAllowImplicitNames(true);
+#endif
+	assumptions	= new NxsAssumptionsBlock(taxa);
+	distances	= new NxsDistancesBlock(taxa);
+	characters	= new NxsCharactersBlock(taxa, assumptions);
+	data		= new NxsDataBlock(taxa, assumptions);
+
+	Add(taxa);
+	Add(trees);
+	Add(assumptions);
+	Add(distances);
+	Add(characters);
+	Add(data);
+	Add(this);
+	}
+
+/*----------------------------------------------------------------------------------------------------------------------
 |	This function provides the ability to read everything following the block name (which is read by the NxsReader 
 |	object) to the END or ENDBLOCK statement. Characters are read from the input stream `in'. Overrides the virtual 
 |	function in the base class.
 */
-void GarliBlock::Read(
+void GarliReader::Read(
   NxsToken &token)	/* the token used to read from `in' */
 	{
 	isEmpty = false;
@@ -1201,20 +1081,29 @@ void GarliBlock::Read(
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
+|	Overrides the NxsBlock virtual function. This function does nothing because the GarliReader block is simply a
+|	private command block and does not store any data.
+*/
+
+void GarliReader::Reset()
+	{
+	}
+
+/*----------------------------------------------------------------------------------------------------------------------
 |	This function outputs a brief report of the contents of this GarliReader block. Overrides the virtual function 
 |	in the NxsBlock base class.
 */
-void GarliBlock::Report(
-  ostream &out)	const /* the output stream to which to write the report */
+void GarliReader::Report(
+  ostream &out)	/* the output stream to which to write the report */
 	{
-/*	message.clear();
+	message.clear();
 	PrintMessage();
 	out << message << '\n';
 	message = id;
 	message += " block contains...";
 	PrintMessage();
 	out << message << '\n';
-*/	}
+	}
 
 /*----------------------------------------------------------------------------------------------------------------------
 |	Runs the command line interpreter, allowing GarliReader to interact with user. Typically, this is the only 
@@ -1241,15 +1130,14 @@ void GarliReader::Run(
 	Add(characters);
 	Add(distances);
 	Add(data);
-	Add(garliBlock);
+	Add(this);
 
 	if (infile_name != NULL)
 		{
 		strcpy(next_command, "exe ");
 		strncat(next_command, infile_name, 252);
 		PreprocessNextCommand();
-//DEBUG
-//		HandleNextCommand();
+		HandleNextCommand();
 		}
 
 	quit_now = false;
@@ -1275,8 +1163,7 @@ void GarliReader::Run(
 			next_command[i] = '\0';
 			}
 		PreprocessNextCommand();
-//DEBUG
-//		HandleNextCommand();
+		HandleNextCommand();
 		}
 	}
 
@@ -1316,6 +1203,20 @@ void GarliReader::SkippingCommand(
 void GarliReader::SkippingDisabledBlock(
   NxsString )	/* the name of the block just exited */
 	{
+	}
+
+/*----------------------------------------------------------------------------------------------------------------------
+|	The code here is identical to the base class version (simply returns 0), so the code here should either be modified 
+|	or this derived version eliminated altogether. Under what circumstances would you need to modify the default code, 
+|	you ask? This function should be modified to something meaningful if this derived class needs to construct and run 
+|	a NxsSetReader object to read a set involving taxa. The NxsSetReader object may need to use this function to look 
+|	up a taxon label encountered in the set. A class that overrides this method should return the taxon index in the 
+|	range [1..ntax]; i.e., add one to the 0-offset index.
+*/
+unsigned GarliReader::TaxonLabelToNumber(
+  NxsString )	/* the taxon label to be translated to a taxon number */
+	{
+	return 0;
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
@@ -1380,7 +1281,7 @@ bool GarliReader::UserQuery(
 */
 inline void	GarliReader::OutputComment(const NxsString &msg)
 	{
-	size_t pos;
+	unsigned pos;
 	string s;
 	//changing this again - just eating the Garli output comments
 	s = "GarliScore";

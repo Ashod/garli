@@ -46,8 +46,6 @@ class Model;
 class Individual;
 extern rng rnd;
 
-#define RESCALE_ARRAY_LENGTH 60
-
 class Tree{
 	protected:
 		int numTipsTotal;
@@ -82,20 +80,10 @@ class Tree{
 		static FLOAT_TYPE uniqueSwapBias;
 		static FLOAT_TYPE distanceSwapBias;
 		static unsigned rescaleEvery;
-		static FLOAT_TYPE rescaleBelow;
 		static list<TreeNode *> nodeOptVector;
 		
 		static FLOAT_TYPE uniqueSwapPrecalc[500];
 		static FLOAT_TYPE distanceSwapPrecalc[1000];
-		static FLOAT_TYPE expectedPrecision;
-//DEBUG		
-//		static FLOAT_TYPE rescalePrecalcThresh[30];
-//		static FLOAT_TYPE rescalePrecalcMult[30];
-//		static int rescalePrecalcIncr[30];
-
-		static FLOAT_TYPE rescalePrecalcThresh[RESCALE_ARRAY_LENGTH];
-		static FLOAT_TYPE rescalePrecalcMult[RESCALE_ARRAY_LENGTH];
-		static int rescalePrecalcIncr[RESCALE_ARRAY_LENGTH];
 
 		static Bipartition *outgroup;
 
@@ -259,17 +247,6 @@ class Tree{
 		void RescaleRateHet(CondLikeArray *destCLA);
 		void RescaleRateHetNState(CondLikeArray *destCLA);
 
-		void StoreBranchlengths(vector<FLOAT_TYPE> &blens){
-			for(int n=1;n<numNodesTotal;n++)
-				blens.push_back(allNodes[n]->dlen);
-			assert(blens.size() == numNodesTotal - 1);
-			}
-		void RestoreBranchlengths(vector<FLOAT_TYPE> &blens){
-			for(int n=1;n<numNodesTotal;n++)
-				SetBranchLength(allNodes[n], blens[n-1]);
-			MakeAllNodesDirty();
-			}
-
 		pair<FLOAT_TYPE, FLOAT_TYPE> OptimizeSingleSiteTreeScale(FLOAT_TYPE optPrecision);
 
 		//functions for dealing with conditional likelihood arrays
@@ -285,8 +262,6 @@ class Tree{
 		void OutputNthClaAcrossTree(ofstream &deb, TreeNode *nd, int site);
 		void ClaReport(ofstream &cla);
 		FLOAT_TYPE CountClasInUse();
-		void OutputSiteLikelihoods(vector<double> &likes, const int *under1, const int *under2, ofstream &ordered, ofstream &packed);
-		void OutputSiteDerivatives(vector<double> &likes, vector<double> &d1s, vector<double> &d2s, const int *under1, const int *under2, ofstream &ordered, ofstream &packed);
 		void CountNumReservedClas(int &, int &, int&);
 		void CheckClaAssignments(TreeNode *nd);
 		void RemoveTempClaReservations();
@@ -313,7 +288,6 @@ class Tree{
 		//odds and ends
 		void PerturbAllBranches();
 		void RandomizeBranchLengths(FLOAT_TYPE lowLimit, FLOAT_TYPE highLimit);
-		void RandomizeBranchLengthsExponential(FLOAT_TYPE lambda);
 		int NodeToNodeDistance(int num1, int num2);
 		int NodesToRoot(TreeNode *nd);
 		void SampleBlenCurve(TreeNode *nd, ofstream &out);

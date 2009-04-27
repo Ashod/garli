@@ -186,7 +186,7 @@ void Individual::Mutate(FLOAT_TYPE optPrecision, Adaptation *adap){
 }
 
 void Individual::CalcFitness(int subtreeNode){
-	if(dirty || FloatingPointEquals(treeStruct->lnL, ZERO_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0)) || FloatingPointEquals(treeStruct->lnL, -ONE_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2))){
+	if(dirty || FloatingPointEquals(treeStruct->lnL, ZERO_POINT_ZERO, 1e-8) || FloatingPointEquals(treeStruct->lnL, -ONE_POINT_ZERO, 1e-8)){
 		if(subtreeNode>0 && accurateSubtrees==true){
 			treeStruct->Score( subtreeNode );
 			}
@@ -410,14 +410,13 @@ void Individual::MakeStepwiseTree(int nTax, int attachesPerTaxon, FLOAT_TYPE opt
 					}
 				}
 			outman.UserMessage("\nOptimizing parameters... improved %f lnL", rateOptImprove);
-		//	this used to depend on param improvement - not sure why
-		//	if(rateOptImprove > 0.0){
+			if(rateOptImprove > 0.0){
 				scratchT->Score();
 				FLOAT_TYPE start=scratchT->lnL;
 				scratchT->OptimizeAllBranches(optPrecision);
 				FLOAT_TYPE bimprove = scratchT->lnL - start;
 				outman.UserMessage("\nOptimizing branchlengths... improved %f lnL", bimprove);
-	//			}
+				}
 			}
 		}		
 
@@ -593,20 +592,19 @@ void Individual::GetStartingConditionsFromFile(const char* fname, int rank, int 
 	delete []temp;
 	}
 
-void Individual::GetStartingTreeFromNCL(const NxsTreesBlock *treesblock, int rank, int nTax, bool restart /*=false*/){
+void Individual::GetStartingTreeFromNCL(NxsTreesBlock *treesblock, int rank, int nTax, bool restart /*=false*/){
 	assert(treeStruct == NULL);
 
 	int totalTrees = treesblock->GetNumTrees();
 
 	int effectiveRank = rank % totalTrees;
 	
-	//we will get the tree string from NCL with taxon numbers (starting at 1), regardless of how it was initially read in 
-	const NxsFullTreeDescription &t = treesblock->GetFullTreeDescription(effectiveRank);
-	if(t.AllTaxaAreIncluded() == false)
-		throw ErrorException("Starting tree description must contain all taxa.");
-	string ts = t.GetNewick();
-	ts += ";";
-	treeStruct=new Tree(ts.c_str(), true, true);
+	//we will get the tree string from NCL with names rather than numbers, regardless of how it was initially read in 
+	NxsString treestr = treesblock->GetTranslatedTreeDescription(effectiveRank);
+	treestr.BlanksToUnderscores();
+	
+	treeStruct=new Tree(treestr.c_str(), false, true);
+	//treeStruct=new Tree(treesblock->GetTreeDescription(effectiveRank).c_str(), false);
 
 	//check that any defined constraints are present in the starting tree
 	int conNum=1;
@@ -632,7 +630,7 @@ void Individual::RefineStartingConditions(bool optModel, FLOAT_TYPE branchPrec){
 	CalcFitness(0);
 
 	for(int i=1;improve > branchPrec;i++){
-		FLOAT_TYPE rateOptImprove=0.0, pinvOptImprove = 0.0, optImprove=0.0, scaleImprove=0.0;
+		FLOAT_TYPE rateOptImprove=0.0, pinvOptImprove = 0.0, optImprove=0.0, scaleImprove=0.0, omegaImprove=0.0;
 		
 		CalcFitness(0);
 		FLOAT_TYPE passStart=Fitness();
@@ -644,17 +642,11 @@ void Individual::RefineStartingConditions(bool optModel, FLOAT_TYPE branchPrec){
 		assert(trueImprove >= -1.0);
 		if(trueImprove < ZERO_POINT_ZERO) trueImprove = ZERO_POINT_ZERO;
 
-		vector<FLOAT_TYPE> blens;
-		treeStruct->StoreBranchlengths(blens);
 		scaleImprove=treeStruct->OptimizeTreeScale(branchPrec);
-		CalcFitness(0);
-		//if some of the branch lengths were at the minimum or maximum boundaries the scale optimization
-		//can actually worsen the score.  If so, return them to their original lengths.
-		if(scaleImprove < ZERO_POINT_ZERO){
-			treeStruct->RestoreBranchlengths(blens);
-			CalcFitness(0);
-			scaleImprove = ZERO_POINT_ZERO;
-			}
+		//if some of the branch lengths are at the minimum or maximum boundaries the scale optimization
+		//can actually worsen the score.  This isn't particularly important during initial refinement,
+		//so just hide it to keep the user from thinking that there is something terribly wrong
+		if(scaleImprove < ZERO_POINT_ZERO) scaleImprove = ZERO_POINT_ZERO;
 
 		CalcFitness(0);
 		if(optModel){

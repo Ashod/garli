@@ -1,4 +1,4 @@
-AM_CPPFLAGS = @CPPFLAGS@
+AM_CPPFLAGS = @INCLUDE@ @CPPFLAGS@
 AM_LDFLAGS  = @LDFLAGS@
  
 bin_PROGRAMS = Garli@VERSION@
@@ -37,21 +37,9 @@ noinst_HEADERS = \
 	translatetable.h \
 	tree.h \
 	treenode.h \
-	utility.h \
-	cudaman.h \
-	cudakernel.cu
-
-if CUDASOURCE
-.cu.o:
-	$(NVCC) -o $@ -c $< $(NVCCFLAGS)
-
-CUDASRCS = \
-	cudainterface.cu \
-	cudaman.cpp 
-endif
+	utility.h 
 
 Garli@VERSION@_SOURCES = \
-	$(CUDASRCS) \
 	adaptation.cpp \
 	bipartition.cpp \
 	condlike.cpp \
@@ -74,7 +62,7 @@ Garli@VERSION@_SOURCES = \
 	translatetable.cpp \
 	tree.cpp \
 	treenode.cpp \
-	mpitrick.cpp 
+	mpitrick.cpp
 
 
 Garli@VERSION@_LDADD =  $(LDADD) @GARLI_LIBS@

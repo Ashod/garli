@@ -22,7 +22,7 @@
 //these will be defined by either the Microsoft compiler
 //or the intel compiler when openmp support is turned on
 //by compiling with /openmp (ms) or -openmp (icc)
-//Nothing else should need to be defined anywhere to get
+//Nothing else should need to be defined anywhere to get 
 //openMP working
 #if defined (__OPENMP) || defined (_OPENMP)
 	#include "omp.h"
@@ -31,7 +31,7 @@
 	#define OMP_INTTERMCLA
 	#define OMP_TERMDERIV
 	#define OMP_INTDERIV
-
+	
 	#define OMP_INTINTCLA_NSTATE
 	#define OMP_INTTERMCLA_NSTATE
 	#define OMP_TERMDERIV_NSTATE
@@ -46,20 +46,9 @@
 #endif
 */
 
-//#undef CUDA_GPU
-//#ifdef CUDA_GPU
-//	#define CUDA_MEMORY_PINNED
-//#endif
-
-#ifdef CUDA_GPU
-	#define CUDA_TEST_ITERATIONS 10
-	#define CUDA_PRINT_TESTS 0
-	#define CUDA_PRINT_DEVICE_QUERY 0
-#endif
-
 #define USE_COUNTS_IN_BOOT
 
-//#undef OPT_DEBUG
+#undef OPT_DEBUG
 
 //The ONLY thing that should need to be done to turn on memcheck leak detection
 //should be defining MONITORING_ALLOCATION here
@@ -72,10 +61,10 @@
 #undef INCLUDE_PERTURBATION
 #undef SUBTREE_VERSION
 #undef ENABLE_CUSTOM_PROFILER
-//#undef SINGLE_PRECISION_FLOATS
-//#undef SWAP_BASED_TERMINATION
+#undef SINGLE_PRECISION_FLOATS
+#undef SWAP_BASED_TERMINATION
 
-//#undef OUTPUT_UNIQUE_TREES
+#undef OUTPUT_UNIQUE_TREES
 #undef VARIABLE_OPTIMIZATION
 
 #undef INPUT_RECOMBINATION
@@ -85,8 +74,6 @@
 
 #undef EQUIV_CALCS
 
-typedef double MODEL_FLOAT;
-
 #ifdef SINGLE_PRECISION_FLOATS
 	typedef float FLOAT_TYPE;
 	#define ONE_POINT_ZERO 1.0f
@@ -95,9 +82,6 @@ typedef double MODEL_FLOAT;
 	#define DEF_MIN_BRLEN 1e-8f
 	#define DEF_MAX_BRLEN 100.0f
 	#define DEF_STARTING_BRLEN 0.05f
-	#define GARLI_FP_EPS FLT_EPSILON
-	#define LUMP_LIKES
-	#define LUMP_FREQ 400
 #else
 	typedef double FLOAT_TYPE;
 	#define ONE_POINT_ZERO 1.0
@@ -106,7 +90,6 @@ typedef double MODEL_FLOAT;
 	#define DEF_MIN_BRLEN 1e-8
 	#define DEF_MAX_BRLEN 100.0
 	#define DEF_STARTING_BRLEN 0.05
-	#define GARLI_FP_EPS DBL_EPSILON
 #endif
 
 #define MAXPATH   		256

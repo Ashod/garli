@@ -37,10 +37,7 @@ class GeneralGamlConfig{
 	bool outputMostlyUselessFiles;
 	bool outputPhylipTree;
 	bool outputCurrentBestTopology;
-
 	bool collapseBranches;
-	//this is just a string that I can use for whatever I want in special runmodes
-	string arbitraryString;
 
 	//starting the run
 	int randseed;

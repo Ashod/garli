@@ -18,7 +18,6 @@
 #include <string.h>
 #include <cassert>
 #include <iostream>
-#include <climits>
 
 using namespace std;
 
@@ -157,8 +156,6 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 	cr.GetBoolOption("outputmostlyuselessfiles", outputMostlyUselessFiles, true);
 	cr.GetBoolOption("outputphyliptree", outputPhylipTree, true);
 	cr.GetBoolOption("collapsebranches", collapseBranches, true);
-
-	cr.GetStringOption("arbitrarystring", arbitraryString, true);
 
 	//changed the wording of this from besttree to besttopology, to match outputeachbettertopology
 	//still allow besttree, since that is what I told Maddison, and I think has already been incorporated

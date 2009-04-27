@@ -124,7 +124,7 @@ char *TreeNode::MakeNewick(char *s, bool internalNodes, bool branchLengths, bool
 			while(*s)s++;
 			}
 		*s++='(';
-		s=left->MakeNewick(s, internalNodes, branchLengths, highPrec);
+		s=left->MakeNewick(s, internalNodes, branchLengths);
 		if(anc){
 			if(branchLengths==true){
 				*s++=':';
@@ -153,7 +153,7 @@ char *TreeNode::MakeNewick(char *s, bool internalNodes, bool branchLengths, bool
 		
 	if(next){
 		*s++=',';
-		s=next->MakeNewick(s, internalNodes, branchLengths, highPrec);
+		s=next->MakeNewick(s, internalNodes, branchLengths);
 		}
 	else {
 		if(anc){
@@ -799,23 +799,23 @@ void TreeNode::OutputBinaryNodeInfo(OUTPUT_CLASS &out) const{
 	out.WRITE_TO_FILE(&dlen, sizeof(FLOAT_TYPE), 1);
 	}
 
-void TreeNode::CollapseMinLengthBranches(int &num){
+void TreeNode::CollapseMinLengthBranches(){
+	
 	if(this->IsInternal()){
 		TreeNode *nd = left;
 		do{
-			if(FloatingPointEquals(nd->dlen, DEF_MIN_BRLEN, 2e-8) && nd->IsInternal()){
+			if(FloatingPointEquals(nd->dlen, DEF_MIN_BRLEN, 1e-8) && nd->IsInternal()){
 				TreeNode *childNode = nd->left;
 				childNode->Prune();
 				AddDes(childNode);
 				//this resets the node checking to the left des of the current node
 				//when a branch is removed.  This duplicates some effort but is safe. 
 				nd = left; 
-				num++;
 				}
 			else 
 				nd = nd->next;
 			}while(nd);
-		left->CollapseMinLengthBranches(num);
+		left->CollapseMinLengthBranches();
 		}
-	if(next) next->CollapseMinLengthBranches(num);
+	if(next) next->CollapseMinLengthBranches();
 	}

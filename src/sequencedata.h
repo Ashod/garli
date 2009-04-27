@@ -41,15 +41,14 @@ protected:
 	FLOAT_TYPE *empStateFreqs;
 	// overrides of base class's virtual fuctions
 	virtual unsigned char CharToDatum( char ch ) = 0;
-	virtual unsigned char CharToBitwiseRepresentation( char ch ) const;
-	virtual char	DatumToChar( unsigned char d ) const;
-	virtual unsigned char	FirstState() const { return 0; }
-	virtual unsigned char	LastState() const { return 3; }
+	virtual unsigned char CharToBitwiseRepresentation( char ch );
+	virtual char	DatumToChar( unsigned char d );
+	virtual unsigned char	FirstState() { return 0; }
+	virtual unsigned char	LastState() { return 3; }
 	virtual int	NumStates(int) const { return 4; }
 
 public:
-	virtual void CreateMatrixFromNCL(const NxsCharactersBlock *) = 0;
-	virtual void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset) = 0;
+	virtual void CreateMatrixFromNCL(GarliReader &reader) = 0;
 	virtual void CalcEmpiricalFreqs() = 0;
 	virtual void GetEmpiricalFreqs(FLOAT_TYPE *f) const{
 		assert(empStateFreqs);
@@ -57,7 +56,8 @@ public:
 		}
 	};
 
-inline unsigned char SequenceData::CharToDatum( char ch ){
+inline unsigned char SequenceData::CharToDatum( char ch )
+{
 	unsigned char datum;
 
 	if( ch == 'A' || ch == 'a' )
@@ -80,7 +80,8 @@ inline unsigned char SequenceData::CharToDatum( char ch ){
 	return datum;
 }
 
-inline unsigned char SequenceData::CharToBitwiseRepresentation( char ch ) const{
+inline unsigned char SequenceData::CharToBitwiseRepresentation( char ch )
+{
 	unsigned char datum=0;
 	switch(ch){
 		case 'A' : datum=1; break;
@@ -123,7 +124,7 @@ inline unsigned char SequenceData::CharToBitwiseRepresentation( char ch ) const{
 	return datum;
 }
 
-inline char SequenceData::DatumToChar( unsigned char d ) const
+inline char SequenceData::DatumToChar( unsigned char d )
 {
 	char ch;
 	switch(d){
@@ -181,10 +182,9 @@ public:
 #endif
 		}
 
-	unsigned char CharToDatum(char d) ;
+	unsigned char CharToDatum(char d);
 	void CalcEmpiricalFreqs();
-	void CreateMatrixFromNCL(const NxsCharactersBlock *);
-	void CreateMatrixFromNCL(const NxsCharactersBlock *charblock, NxsUnsignedSet &charset);
+	void CreateMatrixFromNCL(GarliReader &reader);
 	void MakeAmbigStrings();
 	char *GetAmbigString(int i) const{
 		return ambigStrings[i];
@@ -558,18 +558,13 @@ public:
 	~CodonData(){}
 
 	void FillCodonMatrixFromDNA(const NucleotideData *);
-	unsigned char CharToDatum(char c)  {
+	unsigned char CharToDatum(char c) {
 		//this shouldn't be getting called, as it makes no sense for codon data
 		assert(0);
 		return 0;
 		}
-	void CreateMatrixFromNCL(const NxsCharactersBlock *){
-		//this also should not be getting called.  The codon matrix
-		//is created from a DNA matrix that has been read in, possibly
-		//by the NCL
-		assert(0);
-		}
-	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset){
+	void CreateMatrixFromNCL(GarliReader &reader){
+
 		//this also should not be getting called.  The codon matrix
 		//is created from a DNA matrix that has been read in, possibly
 		//by the NCL
@@ -608,11 +603,9 @@ public:
 		}
 	void FillAminoacidMatrixFromDNA(const NucleotideData *dat, GeneticCode *code);
 	void CalcEmpiricalFreqs();
-	unsigned char CharToDatum(char d) ;
-	void CreateMatrixFromNCL(const NxsCharactersBlock *);
-	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
+	unsigned char CharToDatum(char d);
+	void CreateMatrixFromNCL(GarliReader &reader);
+
 	};
 
 #endif
-
-

@@ -21,10 +21,8 @@
 
 #include <cmath>
 #include <string>
-#include <cstring>
 #include <vector>
 #include <cassert>
-#include <set>
 
 using namespace std;
 
@@ -471,6 +469,7 @@ class Bipartition{
 		string left = "(";
 		string right = "(";
 		char temp[100];
+		int lastLeft=-1, lastRight=-1;
 		if(mask != NULL){
 			for(int i=0;i<nBlocks;i++){
 				unsigned int t=rep[i];
@@ -538,17 +537,10 @@ class Bipartition{
 		return nodes; 
 		}
 	
-	void BipartFromNodenums(const vector<int> & nodes){
+	void BipartFromNodenums(vector<int> nodes){
 		ClearBipartition();
 		Bipartition temp;
-		for(vector<int>::const_iterator it = nodes.begin();it != nodes.end();it++)
-			*this += temp.TerminalBipart(*it);
-		}
-
-	void BipartFromNodenums(const std::set<unsigned> & nodes){
-		ClearBipartition();
-		Bipartition temp;
-		for(set<unsigned>::const_iterator it = nodes.begin();it != nodes.end();it++)
+		for(vector<int>::iterator it = nodes.begin();it < nodes.end();it++)
 			*this += temp.TerminalBipart(*it);
 		}
 
