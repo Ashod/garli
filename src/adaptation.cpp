@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -27,13 +27,6 @@ using namespace std;
 #include "math.h"
 #include "configoptions.h"
 #include "individual.h"
-
-/* The next 3 lovely lines are used to cause the build to fail.  This is useful for making 
-   	sure that our automated build system is finding build errors
-*/
-#if defined(CAUSE_A_BUILD_ERROR) && CAUSE_A_BUILD_ERROR
-#	error "CAUSE_A_BUILD_ERROR is defined"
-#endif
 
 Adaptation::Adaptation(const GeneralGamlConfig *gc){
 
@@ -269,10 +262,6 @@ void Adaptation::ReadFromCheckpoint(FILE *in){
 	intptr_t scalarSize = (intptr_t) &improvetotal - (intptr_t) this;
 
 	fread((char *) this, 1, scalarSize, in);
-	if(ferror(in) || feof(in)){//this mainly checks for a zero-byte file
-		throw ErrorException("Error reading checkpoint file <ofprefix>.adap.check.\n\tA problem may have occured writing the file to disk, or the file may have been overwritten or truncated.\n\tUnfortunately you'll need to start the run again from scratch.");
-
-		}
 
 	//now the arrays, which should be of length intervalsToStore
 	fread((char *) improvetotal, sizeof(FLOAT_TYPE), intervalsToStore, in);

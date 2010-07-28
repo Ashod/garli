@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -124,7 +124,7 @@ char *TreeNode::MakeNewick(char *s, bool internalNodes, bool branchLengths, bool
 			while(*s)s++;
 			}
 		*s++='(';
-		s=left->MakeNewick(s, internalNodes, branchLengths, highPrec);
+		s=left->MakeNewick(s, internalNodes, branchLengths);
 		if(anc){
 			if(branchLengths==true){
 				*s++=':';
@@ -153,7 +153,7 @@ char *TreeNode::MakeNewick(char *s, bool internalNodes, bool branchLengths, bool
 		
 	if(next){
 		*s++=',';
-		s=next->MakeNewick(s, internalNodes, branchLengths, highPrec);
+		s=next->MakeNewick(s, internalNodes, branchLengths);
 		}
 	else {
 		if(anc){
@@ -163,74 +163,12 @@ char *TreeNode::MakeNewick(char *s, bool internalNodes, bool branchLengths, bool
 	return s;
 	}
 
-void TreeNode::MakeNewick(string &outStr, const SequenceData *data, bool internalNodes, bool branchLengths, bool taxonNames /*=false*/, bool highPrec /*=false*/) const{
-	char s[500];
-	if(left){
-		if(internalNodes==true && nodeNum!=0){
-			sprintf(s, "%d", nodeNum);
-			outStr += s;
-			}
-		outStr += '(';
-		left->MakeNewick(outStr, data, internalNodes, branchLengths, taxonNames, highPrec);
-		if(anc){
-			if(branchLengths==true){
-				outStr += ':';
-				if(highPrec == false){
-					sprintf(s, "%.8lf", dlen);
-					outStr += s;
-					}
-				else{
-					sprintf(s, "%.10lf", dlen);
-					outStr += s;
-					}
-				}
-			}
-		else
-			return;
-		}
-	else {
-		//sprintf(s, "%d", nodeNum);
-		//outStr += s;
-		if(taxonNames && data)
-			outStr += data->TaxonLabel(nodeNum - 1);
-		else{
-			sprintf(s, "%d", nodeNum);
-			outStr += s;
-			}
-		if(branchLengths==true){
-			outStr += ':';
-			if(highPrec == false)
-				sprintf(s, "%.8lf", dlen);
-			else 
-				sprintf(s, "%.10lf", dlen);
-			outStr += s;
-			}
-		}
-		
-	if(next){
-		outStr += ',';
-		next->MakeNewick(outStr, data, internalNodes, branchLengths, taxonNames, highPrec);
-		}
-	else {
-		if(anc){
-			outStr += ')';
-			}
-		}
-	}
-
 void TreeNode::MakeNewickForSubtree(char *s) const{
 	assert(left);
 	*s++='(';
 	s=left->MakeNewick(s, false, false);
 	*s++=';';
 	*s++='\0';
-	}
-
-void TreeNode::MakeNewickForSubtree(string &s, const SequenceData *data, bool internalNodes, bool branchLengths, bool taxonNames, bool highPrec) const{
-	assert(left);
-	s += '(';
-	left->MakeNewick(s, data, internalNodes, branchLengths, taxonNames, highPrec);
-	//s += ';';
 	}
 
 //MTH
@@ -746,7 +684,7 @@ void TreeNode::RecursivelyAddOrRemoveSubtreeFromBipartitions(const Bipartition &
 	}
 
 //unsigned MATCH_II=0, MATCH_TT=0, MATCH_IT=0, TOT_II=0, TOT_IT=0, TOT_TT=0;
-
+/*
 void TreeNode::SetEquivalentConditionalVectors(const SequenceData *data){
 	if(nodeNum == 0){
 		if(left->IsInternal()) left->SetEquivalentConditionalVectors(data);
@@ -821,7 +759,8 @@ void TreeNode::SetEquivalentConditionalVectors(const SequenceData *data){
 			}
 		}
 	}
-/*
+*/
+ /*
 void TreeNode::OutputBinaryNodeInfo(ofstream &out) const{
 	int zero = 0;
 
@@ -867,10 +806,6 @@ void TreeNode::CollapseMinLengthBranches(int &num){
 		do{
 			if(FloatingPointEquals(nd->dlen, DEF_MIN_BRLEN, 2e-8) && nd->IsInternal()){
 				TreeNode *childNode = nd->left;
-				//Note that Prune requires that the subtree pruned is not part of a polytomy
-				//this means that the collapsing must start at the root and work upward.
-				//Also note that Prune automatically detatches the anc of the pruned subtree
-				//since it then only has one child.
 				childNode->Prune();
 				AddDes(childNode);
 				//this resets the node checking to the left des of the current node

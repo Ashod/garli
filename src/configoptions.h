@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -22,8 +22,32 @@
 #include <string>
 
 using std::string;
+using std::vector;
 
 #include "hashdefines.h"
+
+class ConfigReader;
+
+class ConfigModelSettings{
+	public:
+	//model settings
+	string datatype;
+	string geneticCode;
+	string stateFrequencies; //equal, estimate, emprical, fixed
+	string rateMatrix;		 //6rate, 2rate, 1rate, fixed, custom(
+	string proportionInvariant; //none, fixed, estimate
+	string rateHetModel;			//gamma, gammafixed, flex, none
+	unsigned numRateCats;
+	ConfigModelSettings(){
+		stateFrequencies = "estimate";
+		rateMatrix = "6rate";
+		proportionInvariant = "estimate";
+		rateHetModel = "gamma";
+		numRateCats = 4;
+		datatype = "dna";
+		geneticCode = "standard";		
+		}
+	};
 
 class GeneralGamlConfig{
 	public:
@@ -46,7 +70,6 @@ class GeneralGamlConfig{
 	int randseed;
 	string streefname;
 	bool refineStart;
-	bool refineEnd;
 
 	//general run details
 	string datafname;
@@ -60,7 +83,6 @@ class GeneralGamlConfig{
 	unsigned searchReps;
 	unsigned runmode;
 	unsigned outputSitelikelihoods;
-	bool reportRunProgress;
 
 	//finishing the run
 	bool enforceTermConditions;
@@ -68,10 +90,12 @@ class GeneralGamlConfig{
 	FLOAT_TYPE improveOverStoredIntervalsThresh;
 	unsigned stopgen;
 	unsigned stoptime;
-	int swapTermThreshold;
 
 	unsigned attachmentsPerTaxon;
 
+	//this holds descriptions of models, possible > 1 in the case of partitioning
+
+/*
 	//model settings
 	string datatype;
 	string geneticCode;
@@ -80,6 +104,11 @@ class GeneralGamlConfig{
 	string proportionInvariant; //none, fixed, estimate
 	string rateHetModel;			//gamma, gammafixed, flex, none
 	unsigned numRateCats;	
+*/
+
+	vector<ConfigModelSettings> configModelSets;
+	bool linkModels;//full linkage for partitioned models / no linkage
+	bool subsetSpecificRates;//whether models are linked or not, separate rate multiplier for each subset
 
 	//all of the following options can vary between master and remote
 	//general population stuff
@@ -150,6 +179,7 @@ class GeneralGamlConfig{
  	// methods
 	GeneralGamlConfig();
 	int Read(const char*, bool isMaster=false);
+	bool ReadPossibleModelPartition(ConfigReader &cr);
 	int Serialize(char**, int*) const;
 	int Deserialize(char*, int);
 	bool operator==(const GeneralGamlConfig&) const;

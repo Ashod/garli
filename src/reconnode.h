@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -385,9 +385,6 @@ public:
 		assert(ferror(in) == false);
 		intptr_t scalarSize = (intptr_t) &total - (intptr_t) &unique + sizeof(total);
 		fread(&unique, scalarSize, 1, in);
-		if(ferror(in) || feof(in)){//this mainly checks for a zero-byte file
-			throw ErrorException("Error reading checkpoint file <ofprefix>.swaps.check.\n\tA problem may have occured writing the file to disk, or the file may have been overwritten or truncated.\n\tUnfortunately you'll need to start the run again from scratch.");
-			}
 
 		for(unsigned i=0;i<unique;i++){
 			Swap s(in);

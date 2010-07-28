@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -35,14 +35,8 @@ using namespace std;
 #include "model.h"
 #include "tree.h"
 #include "reconnode.h"
-#include "garlireader.h"
 
 #include "utility.h"
-
-#ifdef CUDA_GPU
-#include "cudaman.h"
-#endif
-
 Profiler ProfIntInt   ("ClaIntInt     ");
 Profiler ProfIntTerm  ("ClaIntTerm    ");
 Profiler ProfTermTerm ("ClaTermTerm   ");
@@ -50,8 +44,6 @@ Profiler ProfRescale  ("Rescale       ");
 Profiler ProfScoreInt ("ScoreInt      ");
 Profiler ProfScoreTerm("ScoreTerm     ");
 Profiler ProfEQVectors("EQVectors     ");
-
-extern bool swapBasedTerm;
 
 /*
 FLOAT_TYPE precalcThresh[30];
@@ -78,21 +70,17 @@ extern int optCalcs;
 extern ofstream opt;
 extern ofstream optsum;
 extern int memLevel;
-extern ModelSpecification modSpec;
-
-#ifdef CUDA_GPU
-extern CudaManager *cudaman;
-#endif
+//extern ModelSpecification modSpec;
 
 //Tree static definitions
 FLOAT_TYPE Tree::meanBrlenMuts;
 FLOAT_TYPE Tree::alpha;
 FLOAT_TYPE Tree::min_brlen;	  // branch lengths never below this value
-FLOAT_TYPE Tree::max_brlen;
+FLOAT_TYPE Tree::max_brlen;	  
 FLOAT_TYPE Tree::exp_starting_brlen;    // expected starting branch length
 ClaManager *Tree::claMan;
 list<TreeNode *> Tree::nodeOptVector;
-const SequenceData *Tree::data;
+const DataPartition *Tree::dataPart;
 unsigned Tree::rescaleEvery;
 FLOAT_TYPE Tree::rescaleBelow;
 FLOAT_TYPE Tree::treeRejectionThreshold;
@@ -100,19 +88,13 @@ vector<Constraint> Tree::constraints;
 AttemptedSwapList Tree::attemptedSwaps;
 FLOAT_TYPE Tree::uniqueSwapBias;
 FLOAT_TYPE Tree::distanceSwapBias;
-FLOAT_TYPE Tree::expectedPrecision;
 
 FLOAT_TYPE Tree::uniqueSwapPrecalc[500];
 FLOAT_TYPE Tree::distanceSwapPrecalc[1000];
 
-//DEBUG
-//FLOAT_TYPE Tree::rescalePrecalcThresh[30];
-//FLOAT_TYPE Tree::rescalePrecalcMult[30];
-//int Tree::rescalePrecalcIncr[30];
-
-FLOAT_TYPE Tree::rescalePrecalcThresh[RESCALE_ARRAY_LENGTH];
-FLOAT_TYPE Tree::rescalePrecalcMult[RESCALE_ARRAY_LENGTH];
-int Tree::rescalePrecalcIncr[RESCALE_ARRAY_LENGTH];
+FLOAT_TYPE Tree::rescalePrecalcThresh[30];
+FLOAT_TYPE Tree::rescalePrecalcMult[30];
+int Tree::rescalePrecalcIncr[30];
 
 Bipartition *Tree::outgroup = NULL;
 
@@ -138,29 +120,29 @@ const char *AdvanceDataPointer(const char *arr, int num){
 	return arr;
 	}
 
-void Tree::SetTreeStatics(ClaManager *claMan, const SequenceData *data, const GeneralGamlConfig *conf){
+void Tree::SetTreeStatics(ClaManager *claMan, const DataPartition *data, const GeneralGamlConfig *conf){
 	Tree::claMan=claMan;
-	Tree::data=data;
+	Tree::dataPart=data;
 #ifdef SINGLE_PRECISION_FLOATS
 	Tree::rescaleEvery = 6;
-	Tree::rescaleBelow = exp(-1.0f); //this is 0.368
+	Tree::rescaleBelow = exp(-11f); //this is 1.67e-5
 	for(int i=0;i<30;i++){
 		Tree::rescalePrecalcIncr[i] = i*3 - (int) log(rescaleBelow);
 		Tree::rescalePrecalcThresh[i] = exp((FLOAT_TYPE)(-rescalePrecalcIncr[i]));
 		Tree::rescalePrecalcMult[i] =  exp((FLOAT_TYPE)(rescalePrecalcIncr[i]));
 		}
-
+		
 	FLOAT_TYPE minVal = 1.0e-10f;
 	FLOAT_TYPE maxVal = 1.0e10f;
 #else
 	Tree::rescaleEvery=16;
-	Tree::rescaleBelow = exp(-24.0); //this is 1.026e-10
-	for(int i=0;i<RESCALE_ARRAY_LENGTH;i++){
+	Tree::rescaleBelow = exp(-24.0); //this is 1.026e-10	
+	for(int i=0;i<30;i++){
 		Tree::rescalePrecalcIncr[i] = i*7 - (int) log(rescaleBelow);
 		Tree::rescalePrecalcThresh[i] = exp((FLOAT_TYPE)(-rescalePrecalcIncr[i]));
 		Tree::rescalePrecalcMult[i] =  exp((FLOAT_TYPE)(rescalePrecalcIncr[i]));
-		}
-
+		}	
+		
 	FLOAT_TYPE minVal = 1.0e-20;
 	FLOAT_TYPE maxVal = 1.0e20;
 #endif
@@ -174,9 +156,9 @@ void Tree::SetTreeStatics(ClaManager *claMan, const SequenceData *data, const Ge
 		}
 	for(int i=0;i<1000;i++){
 		Tree::distanceSwapPrecalc[i] = (FLOAT_TYPE) pow(Tree::distanceSwapBias, i);
-		//if(Tree::distanceSwapPrecalc[i] != Tree::distanceSwapPrecalc[i]) Tree::distanceSwapPrecalc[i]=0.0f;
-		if(Tree::distanceSwapPrecalc[i] < minVal) Tree::distanceSwapPrecalc[i] = minVal;
-		if(Tree::distanceSwapPrecalc[i] > maxVal) Tree::distanceSwapPrecalc[i] = maxVal;
+		//if(Tree::distanceSwapPrecalc[i] != Tree::distanceSwapPrecalc[i]) Tree::distanceSwapPrecalc[i]=0.0f;	
+		if(Tree::distanceSwapPrecalc[i] < minVal) Tree::distanceSwapPrecalc[i] = minVal;	
+		if(Tree::distanceSwapPrecalc[i] > maxVal) Tree::distanceSwapPrecalc[i] = maxVal;	
 		}
 
 	Tree::meanBrlenMuts	= conf->meanBrlenMuts;
@@ -188,70 +170,35 @@ void Tree::SetTreeStatics(ClaManager *claMan, const SequenceData *data, const Ge
 
 	//deal with the outgroup specification, if there is one
 	if(conf->outgroupString.length() > 0){
+		//NxsString s(conf->outgroupString.c_str());
+		const char *o = conf->outgroupString.c_str();
+		vector<int> nums;
+		unsigned pos1=0, pos2;
+		while(pos1 < conf->outgroupString.size()){
+			pos2 = conf->outgroupString.find(" ", pos1+1);
+			string tax = conf->outgroupString.substr(pos1, pos2);
+			nums.push_back(atoi(tax.c_str()));
+			pos1 = pos2;
+			}
+
 		if(outgroup) outgroup->ClearBipartition();
 		else outgroup = new Bipartition();
+		outgroup->BipartFromNodenums(nums);
+		
+		//if the outgroup consists of multiple taxa, make a constraint that the ingroup be monophyletic
+/*		if(nums.size() > 1){
+			Constraint out(outgroup, true);
+			out.Standardize();
+			out.SetAsOutgroup();
 
-		GarliReader &reader = GarliReader::GetInstance();
-		if(reader.GetTaxaBlock(0)->GetNTax() > 0){
-			//now using NCL to much more rigorously and flexibly read the outgroup specification
-			NxsString tax(conf->outgroupString.c_str());
-			tax += ";";
-			std::istringstream s(tax);
-			NxsToken tok(s);
-			tok.GetNextToken();
-			NxsUnsignedSet iset;
-			try{
-				NxsSetReader::ReadSetDefinition(tok, *reader.GetTaxaBlock(0), "outgroup", "GARLI configuration", &iset);
-				outman.UserMessage("Found outgroup specification: %s", NxsSetReader::GetSetAsNexusString(iset).c_str());
+			int num=1;
+			for(vector<Constraint>::iterator con=constraints.begin();con!=constraints.end();con++){
+				if((*con).IsCompatibleWithConstraint(&out) == false) throw ErrorException("Specified outgroup is not compatible with constraint number %d!", num);
+				num++;
 				}
-			catch (const NxsException & x){
-				throw ErrorException("%s", x.msg.c_str());
-				}
-
-			//the set has been read as indeces, so change to taxon numbers before passing to the bipart func
-			NxsUnsignedSet nset;
-			for(NxsUnsignedSet::const_iterator it = iset.begin();it != iset.end(); it++)
-				nset.insert(*it + 1);
-
-			outgroup->BipartFromNodenums(nset);
+			constraints.push_back(out);
 			}
-		else{//the old half-assed outgroup reader
-			vector<int> nums;
-			unsigned pos1=0, pos2;
-			while(pos1 < conf->outgroupString.size()){
-				pos2 = conf->outgroupString.find(" ", pos1+1);
-				string tax = conf->outgroupString.substr(pos1, pos2 - pos1);
-				tax = NxsString::strip_whitespace(tax);
-				for(string::iterator it = tax.begin();it != tax.end();it++)
-					if(isdigit(*it) == false)
-						throw ErrorException("problem in outgroup specification.\nExpecting taxon numbers separated by spaces, found %s.", tax.c_str());
-				nums.push_back(atoi(tax.c_str()));
-				pos1 = pos2;
-				}
-			outman.UserMessageNoCR("Found outgroup specification: ");
-			for(vector<int>::iterator it = nums.begin();it != nums.end();it++)
-				outman.UserMessageNoCR("%d ", *it);
-			outman.UserMessage("\n");
-			outgroup->BipartFromNodenums(nums);
-			}
-		outman.UserMessage("\n#######################################################");
-		}
-	}
-
-//this assumes that a tree string has been passed in with *s pointing to the first char of a blen
-//description, and reads and advances the string up to the next non-blen character.  The string that
-//was interpreted as the branch length is placed into the NxsString passed in
-double ReadBranchlength(const char *&s, NxsString &blen){
-	blen = "";
-	while(*(s+1) && *(s+1)!=')'&& *(s+1)!=',' && *(s+1)!=';'){
-		blen += *(s+1);
-		s++;
-		}
-	s++;
-	double len;
-	if(NxsString::to_double(blen.c_str(), &len) == false)
-		throw ErrorException("Problem reading tree description.  Illegal branch-length specification: \"%s\"", blen.c_str());
-	return len;
+*/		}
 	}
 
 //DJZ 4-28-04
@@ -259,26 +206,23 @@ double ReadBranchlength(const char *&s, NxsString &blen){
 //internal numbers be specified the way that internal node labels are according to the newick format, ie directly after
 //the closing paren that represents the internal node.  But, that makes going from string -> tree annoying
 //because by the time the internal node number would be read the treeNode structure would have already been created.
-
 //So, the internal node numbers will go just BEFORE the opening paren that represents that node
 //Example:  50(1:.05, 2:.02):.1 signifies a node numbered 50 that is ancestral to 1 and 2.
 Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, bool allowMissingTaxa /*=false*/){
-	//if we are using this constructor, we can't guarantee that the tree will be specified unrooted (with
+	//if we are using this constructor, we can't guarantee that the tree will be specified unrooted (with 
 	//a trifurcating root), so use an allocation function that is guaranteed to have enough room and then
 	//trifurcate and delete if necessary
-
-	//this should strip out any crap in the tree string, although much of it would be disregarded below anyway
-	string editedString = NxsString::strip_whitespace(s);
-	s = editedString.c_str();
 	
-	AllocateTree();
+	AllocateTree(true);
 	TreeNode *temp=root;
 	root->attached=true;
 	int current=numTipsTotal+1;
 	bool cont=false;
-	this->numBranchesAdded = 0;
-	while(*s){
+//	numBranchesAdded=-1;//if reading in a tree start at -1 so opening ( doesn't add a branch
+	while(*s)
+		{
 		cont = false;
+
 		if(*s == ';')
 			break;  // ignore semicolons
 		else if(*s == ' ' || *s == '\t')
@@ -286,24 +230,26 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 			//DEBUG
 			//break;  // ignore spaces
 		else if(*s == ')'){
-			//we're closing a paren, moving a node toward the root
 			assert(temp->anc);
 			if(!temp->anc) throw ErrorException("Problem reading tree description.  Mismatched parentheses?");
 			temp=temp->anc;
 			s++;
-			//while(*s && !isgraph(*s))
-			//an internal node label might appear here, so ignore anything up to one of these valid next characters
-			while(*s && (*s != ',') && (*s != ':') && (*s != ',') && (*s != ')') && (*s != ';'))
+			while(*s && !isgraph(*s))
 				s++;
-			if(*s==':'){//adding a branch length
-				NxsString len;
-				temp->dlen = ReadBranchlength(s, len);
+			if(*s==':')
+				{NxsString info = "";
+				while( *(s+1)!=')'&& *(s+1)!=','){
+						info+=*(s+1);
+						s++;
+					}
+				s++;
+				temp->dlen = (FLOAT_TYPE) atof( info.c_str() );
 				if(temp->dlen < min_brlen){
-					outman.UserMessage("->Branch of length %s is less than min of %.1e.  Setting to min.", len.c_str(), min_brlen);
+					outman.UserMessage("->Branch of length %s is less than min of %.1e.  Setting to min.", info.c_str(), min_brlen);
 					temp->dlen = min_brlen;
 					}
 				else if (temp->dlen > max_brlen){
-					outman.UserMessage("->Branch of length %s is greater than max of %.0f.  Setting to max.", len.c_str(), max_brlen);
+					outman.UserMessage("->Branch of length %f is greater than max of %.0f.  Setting to max.", temp->dlen, max_brlen);
 					temp->dlen = max_brlen;
 					}
 				}
@@ -334,20 +280,14 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 			assert(temp->anc);
 			if(!temp->anc) throw ErrorException("Problem reading tree description.  Mismatched parentheses?");
 			temp=temp->anc;
-			if(*(s+1)!='(') {
-				s++;
-			}
-			else {
-				numBranchesAdded--; // this ( will be encountered in two consecutive loops, so we decrement numBranchesAdded to avoid overcounting.
-			}
+			numBranchesAdded--;//sloppy way to avoid over incrementing numBranchesAdded
+			if(*(s+1)!='(') s++;
 			cont = true;
 			}
 		if(*s == '(' || isdigit(*s) || cont==true){
 			//here we're about to add a node of some sort
-			this->numBranchesAdded++;
+			numBranchesAdded++;
 			if(*(s+1)=='('){//add an internal node
-				if(current >= numNodesTotal)
-					throw ErrorException("Problem reading tree description.  Extra taxa?");
 				temp=temp->AddDes(allNodes[current++]);
 				numNodesAdded++;
 				s++;
@@ -357,15 +297,12 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 				//num specifed, or a terminal node.  Either way the next characters in the string will be
 				//digits.  We'll have to look ahead to see what the next non-digit character is.  If it's
 				//a '(', we know we are adding a prenumbered internal
-				if(*s=='(') {
-					this->numBranchesAdded++;
-					s++;
-				}
+				if(*s=='(') s++;
 				int i=0;
 				bool term=true;
 				while(isdigit(*(s+i))) i++;
 				if(*(s+i) == '(') term=false;
-
+				
 				if(term == false){//add an internal node with the nodenum specified in the string
 					NxsString num;
 					num = *s;
@@ -376,7 +313,7 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 					int internalnodeNum = atoi( num.c_str() );
 	                temp=temp->AddDes(allNodes[internalnodeNum]);
 	                numNodesAdded++;
-	                s++;
+	                s++;							
 					}
 				else{//add a terminal node
 					// read taxon name
@@ -387,67 +324,50 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 						while(isdigit(*(s+1))){
 							assert(*s);
 							name += *++s;
-							}
+							}						
 						taxonnodeNum = atoi( name.c_str() );
 						if(taxonnodeNum == 0) throw ErrorException("Unexpected character(s) found in tree description \"%s!\"", name.c_str());
-						if(taxonnodeNum > numTipsTotal) throw ErrorException("Taxon number in tree description (%d) is greater than\n\tnumber of taxa in dataset!", taxonnodeNum);
+						if(taxonnodeNum > numTipsTotal) throw ErrorException("Taxon  number in tree description (%d) is greater than\n\tnumber of taxa in dataset!", taxonnodeNum);
 						}
 					else{
 						while(*(s+1) != ':' && *(s+1) != ',' && *(s+1) != ')'){
 							assert(*s);
 							name += *++s;
 							}
-						//This is a bit annoying.  If the tree string came directly from NCL then GetEscaped should get any
-						//names to match the names present in the datamatrix (whether Nexus or not).  But, if the tree string
-						//came from a start file with just a newick string there are various possibilities.  First try interpreting
-						//the name as-is.  If that doesn't work, try GetEscaped.  If that doesn't work, try removing quotes (if any)
-						//before calling GetEscaped
-						taxonnodeNum = data->TaxonNameToNumber(name);
-						if(taxonnodeNum < 0){
-							NxsString esc = NxsString::GetEscaped(name).c_str();
-							taxonnodeNum = data->TaxonNameToNumber(esc);
-							}
-						if(taxonnodeNum < 0){
-							if(name.c_str()[0] == '\'' && name.c_str()[name.size()-1] == '\''){
-								NxsString esc2;
-								for(int c=1;c<name.size()-1;c++){
-									esc2 += name[c];
-									}
-								NxsString esc = NxsString::GetEscaped(esc2).c_str();
-								taxonnodeNum = data->TaxonNameToNumber(esc);
-								}
-							}
-						if(taxonnodeNum < 0){
-							throw ErrorException("Unknown taxon \"%s\" encountered in tree description!\nIf you have spaces in your taxon names, try replacing them with underscores.", name.c_str());
-							}
+						//its possible that the treestring has spaces in the names rather than underscores
+						name.BlanksToUnderscores();
+						taxonnodeNum = dataPart->TaxonNameToNumber(name);
+						if(taxonnodeNum < 0) throw ErrorException("Unknown taxon \"%s\" encountered in tree description!", name.c_str());
 						}
-					if(allNodes[taxonnodeNum]->attached == true)
-						throw ErrorException("Taxon \"%s\" seems to appear in the tree description twice!\nCheck the tree string.", name.c_str());
-					else
-						temp=temp->AddDes(allNodes[taxonnodeNum]);
+	                temp=temp->AddDes(allNodes[taxonnodeNum]);
 	                numNodesAdded++;
 					numTipsAdded++;
 	                s++;
-					while(*s == ' ' || *s == '\t') s++;;//eat any spaces here
-
+					while(*s == ' ') s++;;//eat any spaces here
+					
 					if(*s!=':' && *s!=',' && *s!=')'){
-						throw ErrorException("Problem parsing tree string!  Expecting \":\" or \",\" or \")\", found %c", *s);
-						s--;
+						throw ErrorException("Problem parsing tree string!  Expecting : or , or ), found %c", *s);
+						s--;	
 						ofstream str("treestring.log", ios::app);
 						str << s << endl;
 						str.close();
 						assert(0);
 						}
-
+						
 	                if(*s==':'){
-						NxsString len;
-						temp->dlen = ReadBranchlength(s, len);
+						NxsString info = "";
+						while( *(s+1)!=')'&& *(s+1)!=','){
+							info+=*(s+1);
+							s++;
+							}
+						s++;
+						temp->dlen = (FLOAT_TYPE)atof( info.c_str() );
 						if(temp->dlen < min_brlen){
-							outman.UserMessage("->Branch of length %s is less than min of %.1e.  Setting to min.", len.c_str(), min_brlen);
+							outman.UserMessage("->Branch of length %s is less than min of %.1e.  Setting to min.", info.c_str(), min_brlen);
 							temp->dlen = min_brlen;
 							}
 						else if (temp->dlen > max_brlen){
-							outman.UserMessage("->Branch of length %s is greater than max of %.0f.  Setting to max.", len.c_str(), max_brlen);
+							outman.UserMessage("->Branch of length %f is greater than max of %.0f.  Setting to max.", temp->dlen, max_brlen);
 							temp->dlen = max_brlen;
 							}
 						}
@@ -461,97 +381,98 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 				}
 			}
 		}
-	this->numBranchesAdded--; // now we reduce the count of branches because the outer () count as a branch, but we don't really use the branch leading to the root of the tree
-	
-	if((allowMissingTaxa == false) && (numTipsAdded != numTipsTotal))
-		throw ErrorException("Number of taxa in tree description (%d) not equal to number of\n\ttaxa in dataset (%d)!  Check tree string.", numTipsAdded, numTipsTotal);
-		
 	if(root->left->next==root->right){
-		MakeTrifurcatingRoot(true, false);
+		MakeTrifurcatingRoot(true, false);	
 		}
 	else	{
-		EliminateNode(2*data->NTax()-2);
+		EliminateNode(2*dataPart->NTax()-2);
 		}
 	assert(root->left->next!=root->right);
+
+	if((allowMissingTaxa == false) && (numTipsAdded != numTipsTotal)) 
+		throw ErrorException("Number of taxa in tree description (%d) not equal to number of taxa in dataset (%d)!", numTipsAdded, numTipsTotal);
 
 	root->CheckforLeftandRight();
 	if(allowPolytomies == false) root->CheckforPolytomies();
 	root->CheckTreeFormation();
 	bipartCond = DIRTY;
+	} 
+
+Tree::Tree(){
+	AllocateTree(false);
 	}
 
-//DZ 10-31-02
-//separating general tree construction stuff from CLA assignment/allocation
-//which will happend differently if the CLAs are shared or not
-Tree::Tree(){
-	allNodes=new TreeNode*[2*data->NTax()-2];
-	for(int i=0;i<2*data->NTax()-2;i++){
+//we might want the extra node here if we are reading in a user tree that could be rooted (with a basal bifurcation rather than trifurcation)
+//the standard Tree() constructor used to be hard coded to take care of the withExtraNode = no case, while AllocateTree did yes.  Otherwise
+//they were almost identical, so have been combined
+void Tree::AllocateTree(bool withExtraNode){
+	if(withExtraNode)
+		numNodesTotal = 2*dataPart->NTax()-1;
+	else 
+		numNodesTotal = 2*dataPart->NTax()-2;
+
+	allNodes=new TreeNode*[numNodesTotal];
+	for(int i=0;i<numNodesTotal;i++){
 		allNodes[i]=new TreeNode(i);
 		allNodes[i]->bipart=new Bipartition();
 		}
 	root=allNodes[0];
 	root->attached=true;
-	//assign data to tips
-	for(int i=1;i<=data->NTax();i++){
-		if(modSpec.IsNucleotide()){
-			allNodes[i]->tipData=static_cast<const NucleotideData *>(data)->GetAmbigString(i-1);
-#ifdef OPEN_MP
-			allNodes[i]->ambigMap=static_cast<const NucleotideData *>(data)->GetAmbigToCharMap(i-1);
-#endif
-			}
-		else
-			allNodes[i]->tipData=(char *)(data)->GetRow(i-1);
-		}
 
+	//PARTITION
+	modPart = NULL;
+
+	AssignDataToTips();
+	
 	numTipsAdded=0;
 	numNodesAdded=1;//root
-	numTipsTotal=data->NTax();
-	numNodesTotal=2*data->NTax()-2;
+	numTipsTotal=dataPart->NTax();
 	lnL=0.0;
 
 	calcs=0;
+	sitelikeLevel = 0;
 	numBranchesAdded=0;
 	taxtags=new int[numTipsTotal+1];
 	bipartCond = DIRTY;
-	sitelikeLevel = 0;
 
 #ifdef EQUIV_CALCS
 	//need to do the root too, since that node is sometimes stolen
-	allNodes[0]->tipData = new char[data->NChar()];
-	for(int i=data->NTax()+1;i<numNodesTotal;i++){
+	allNodes[0]->tipData = new char[dataPart->NChar()];
+	for(int i=dataPart->NTax()+1;i<numNodesTotal;i++){
 		allNodes[i]->tipData = new char[data->NChar()];
 		}
 	dirtyEQ=true;
 #endif
 	}
 
-void Tree::AllocateTree(){
-	calcs=0;
-	allNodes=new TreeNode*[2*data->NTax()-1];
-	for(int i=0;i<2*data->NTax()-1;i++){
-		allNodes[i]=new TreeNode(i);
-		allNodes[i]->bipart=new Bipartition();
-		}
-	root=allNodes[0];
-	for(int i=1;i<=data->NTax();i++){
-		if(modSpec.IsNucleotide()){
-			allNodes[i]->tipData=static_cast<const NucleotideData *>(data)->GetAmbigString(i-1);
+void Tree::AssignDataToTips(){
+	//TODO FOR MIXING - this assumes that 1 data subset = one cla
+	for(int c = 0;c < claSpecs.size();c++){
+		SequenceData *curData = dataPart->GetSubset(c);
+		for(int t=1;t<=dataPart->NTax();t++){
+			//if(isNucleotide){
+			if(modSpecSet.GetModSpec(claSpecs[c].modelIndex)->IsNucleotide()){
+				//allNodes[t]->tipData=static_cast<const NucleotideData *>(curData)->GetAmbigString(t-1);
+				allNodes[t]->tipData.push_back(static_cast<const NucleotideData *>(curData)->GetAmbigString(t-1));
 #ifdef OPEN_MP
-			allNodes[i]->ambigMap=static_cast<const NucleotideData *>(data)->GetAmbigToCharMap(i-1);
+				//allNodes[t]->ambigMap=static_cast<const NucleotideData *>(curData)->GetAmbigToCharMap(t-1);
+				allNodes[t]->ambigMap.push_back(static_cast<const NucleotideData *>(curData)->GetAmbigToCharMap(t-1));
 #endif
+				}
+			else{
+				//allNodes[t]->tipData=(char *)(curData)->GetRow(t-1);
+				allNodes[t]->tipData.push_back((char *)(curData)->GetRow(t-1));
+	#ifdef OPEN_MP
+				//even though there is no ambig map for non-nuc data, we need to put a dummy into the vector
+				//so that the data index matches up with the correct element in the vector
+				allNodes[t]->ambigMap.push_back(NULL);
+	#endif
+				}
 			}
-		else
-			allNodes[i]->tipData=(char *)(data)->GetRow(i-1);
 		}
-
-	numTipsAdded=0;
-	numNodesAdded=1;//root
-	numTipsTotal=data->NTax();
-	numNodesTotal=2*data->NTax()-1;
-	lnL=0.0;
-	numBranchesAdded=0;
-	taxtags=new int[numTipsTotal+1];
-	sitelikeLevel = 0;
+	#ifdef OPEN_MP
+	assert(allNodes[1]->ambigMap.size() == claSpecs.size());
+	#endif
 	}
 
 Tree::~Tree(){
@@ -640,7 +561,7 @@ int Tree::BrlenMutateSubset(vector<int> const &subtreeMemberNodes){
 		allNodes[branch]->dlen*=rnd.gamma( Tree::alpha );
 		SweepDirtynessOverTree(allNodes[branch]);
 		allNodes[branch]->dlen = (allNodes[branch]->dlen > min_brlen ? (allNodes[branch]->dlen < max_brlen ? allNodes[branch]->dlen : max_brlen) : min_brlen);
-		}
+		}	
 	return numBrlenMuts;
 	}
 
@@ -668,7 +589,7 @@ void Tree::MakeTrifurcatingRoot(bool reducenodes, bool clasAssigned ){
 	if(clasAssigned){
 		removedNode->claIndexDown=claMan->SetDirty(removedNode->claIndexDown);
 		removedNode->claIndexUL=claMan->SetDirty(removedNode->claIndexUL);
-		removedNode->claIndexUR=claMan->SetDirty(removedNode->claIndexUR);
+		removedNode->claIndexUR=claMan->SetDirty(removedNode->claIndexUR);			
 		}
 	t1 = removedNode->left;
 	while(t1){
@@ -692,7 +613,7 @@ void Tree::MakeTrifurcatingRoot(bool reducenodes, bool clasAssigned ){
 		if(clasAssigned){
 			root->left->claIndexDown=claMan->SetDirty(root->left->claIndexDown);
 			root->left->claIndexUL=claMan->SetDirty(root->left->claIndexUL);
-			root->left->claIndexUR=claMan->SetDirty(root->left->claIndexUR);
+			root->left->claIndexUR=claMan->SetDirty(root->left->claIndexUR);			
 			}
 		root->left=t1;
 		t1->next=t2;
@@ -713,7 +634,7 @@ void Tree::MakeTrifurcatingRoot(bool reducenodes, bool clasAssigned ){
 			root->right->claIndexDown=claMan->SetDirty(root->right->claIndexDown);
 			root->right->claIndexUL=claMan->SetDirty(root->right->claIndexUL);
 			root->right->claIndexUR=claMan->SetDirty(root->right->claIndexUR);
-			}
+			}			
 	 	root->left->next=t1;
 	 	t1->prev=root->left;
 		t1->next=t2;
@@ -724,7 +645,7 @@ void Tree::MakeTrifurcatingRoot(bool reducenodes, bool clasAssigned ){
 	 	root->right=t2;
 		}
 */	if(reducenodes==1){
-		//we need to permanently get rid of the node that was removed and decrement the nodeNums of those greater
+		//we need to permanently get rid of the node that was removed and decrement the nodeNums of those greater 
 		//than it.
 		SortAllNodesArray();
 		EliminateNode(removedNode->nodeNum);
@@ -744,7 +665,7 @@ bool Tree::ArbitrarilyBifurcate(){
 	TreeNode *desNode;
 	bool goingDown = false;
 	bool polytomiesFound = false;
-
+	
 	while(numNodesAdded < numNodesTotal){
 		if(curNode->IsInternal() && !goingDown){
 			desNode = curNode->left;
@@ -764,7 +685,7 @@ bool Tree::ArbitrarilyBifurcate(){
 				TreeNode *move1 = nodes[first];
 				TreeNode *move2 = nodes[second];
 				TreeNode *nextInternal = allNodes[placeInAllNodes];
-
+				
 				curNode->RemoveDes(move1);
 				curNode->RemoveDes(move2);
 				nextInternal->AddDes(move1);
@@ -790,7 +711,7 @@ bool Tree::ArbitrarilyBifurcate(){
 					curNode = curNode->anc;
 					goingDown = true;
 					}
-				}
+				}				
 			}
 		else{
 			if(curNode->next){
@@ -810,7 +731,7 @@ bool Tree::ArbitrarilyBifurcate(){
 	}
 
 void Tree::AddRandomNode(int nodenum , int &placeInAllNodes){
-
+	
 	assert(nodenum>0 && nodenum<=numTipsTotal);  //should be adding a terminal
 	TreeNode* nd=allNodes[nodenum];
 	nd->dlen = Tree::exp_starting_brlen;
@@ -819,9 +740,9 @@ void Tree::AddRandomNode(int nodenum , int &placeInAllNodes){
 #endif
 	if(nd->dlen < min_brlen) nd->dlen = min_brlen;
 	else if(nd->dlen > max_brlen) nd->dlen = max_brlen;
-
+	
 	nd->next=nd->prev=NULL;//in case this node was connected in some other tree
-
+	
 	//Make sure that the root has 3 decendents
 	if(numBranchesAdded<3)
 		{root->AddDes(nd);
@@ -838,14 +759,14 @@ void Tree::AddRandomNode(int nodenum , int &placeInAllNodes){
 		nd->dlen = (nd->dlen > min_brlen ? nd->dlen : min_brlen);
 		connector->left=connector->right=NULL;
 		connector->AddDes(nd);
-
+		
 		//select a branch to break with the connector
 		int k = rnd.random_int( numBranchesAdded ) + 1;
 		TreeNode* otherDes = root->FindNode( k );
 
 		// replace puts connection in the tree where otherDes had been
 		otherDes->SubstituteNodeWithRespectToAnc(connector);
-
+		
 		//add otherDes back to the tree as the sister to the new tip
 		connector->AddDes(otherDes);
 		numBranchesAdded++;//numBranchesAdded needs to be incremented twice because a total of two branches have been added
@@ -871,9 +792,9 @@ void Tree::AddRandomNodeWithConstraints(int nodenum, int &placeInAllNodes, Bipar
 #endif
 	if(nd->dlen < min_brlen) nd->dlen = min_brlen;
 	else if(nd->dlen > max_brlen) nd->dlen = max_brlen;
-
+	
 	nd->next=nd->prev=NULL;//in case this node was connected in some other tree
-
+	
 	//Make sure that the root has 3 decendents
 	if(numBranchesAdded<3)
 		{root->AddDes(nd);
@@ -890,7 +811,7 @@ void Tree::AddRandomNodeWithConstraints(int nodenum, int &placeInAllNodes, Bipar
 		connector->dlen = (connector->dlen > min_brlen ? connector->dlen : min_brlen);
 		connector->left=connector->right=NULL;
 		connector->AddDes(nd);
-
+		
 		//select a branch to break with the connector
 		int k;
 		TreeNode *otherDes;
@@ -904,13 +825,6 @@ void Tree::AddRandomNodeWithConstraints(int nodenum, int &placeInAllNodes, Bipar
 			compat=true;
 			CalcBipartitions(true);
 			proposed.FillWithXORComplement(*(nd->bipart), *(otherDes->bipart));
-
-			//6/23/09 This call was moved here from within SwapAllowedByConstraint.  This saves a lot
-			//of work when looping over many constraints for a single swap that really only requires a single adjustment.
-			//Doing the adjustment isn't necessary for positive non-backbone constraints with no mask (and isn't always
-			//necessary when there is a mask either), but there will always be a mask here since we're building a partial tree.
-			AdjustBipartsForSwap(nd->nodeNum, otherDes->nodeNum);
-
 			for(vector<Constraint>::iterator conit=constraints.begin();conit!=constraints.end();conit++){
 				//if the taxon being added isn't in the backbone, it can go anywhere
 				if(((*conit).IsBackbone() == false) || (*conit).GetBackboneMask()->ContainsTaxon(nd->nodeNum)){
@@ -923,7 +837,7 @@ void Tree::AddRandomNodeWithConstraints(int nodenum, int &placeInAllNodes, Bipar
 
 		// replace puts connection in the tree where otherDes had been
 		otherDes->SubstituteNodeWithRespectToAnc(connector);
-
+		
 		//add otherDes back to the tree as the sister to the new tip
 		connector->AddDes(otherDes);
 		numBranchesAdded++;//numBranchesAdded needs to be incremented twice because a total of two branches have been added
@@ -951,9 +865,9 @@ void Tree::MimicTopologyButNotInternNodeNums(TreeNode *copySource,TreeNode *repl
 			replicate->AddDes(allNodes[tempno->nodeNum]);
 			}
 		tempno=tempno->next;
-		}
+		}	
 	}
-
+	
 void Tree::RecombineWith( Tree *t, bool sameModel, FLOAT_TYPE optPrecision ){
 	//note that this function will loop infinately right now if the tree is too small
 	//(ie, there are no suitable nodes to choose to recombine with)
@@ -966,7 +880,7 @@ void Tree::RecombineWith( Tree *t, bool sameModel, FLOAT_TYPE optPrecision ){
 	int k;
 	TreeNode* cop;
 	bool sfound=false;
-
+	
 	while(!sfound){//find a non trivial clade to add to this
 		//k = rnd.random_int( t->numBranchesAdded-1);
 		//cop = t->root->FindNode( ++k);
@@ -1007,20 +921,20 @@ void Tree::RecombineWith( Tree *t, bool sameModel, FLOAT_TYPE optPrecision ){
 			}
 		}
 	int numAttachedToRoot=root->CountBranches(0);
-
+	
 	//what we'd like to do now is make the nodeNums of the subtree that will be attached to this
 	//the same as they were in the source tree.  This will require swapping some nodes in the allNodes array,
-	//but will simplify other things, and allow us not to recalc some clas.  This is a bit dangerous though, as
+	//but will simplify other things, and allow us not to recalc some clas.  This is a bit dangerous though, as 
 	//the nodeNums in this that correspond to those in the cop subtree are now technically free, but are still
 	//marked as attached.  There should still be one node in this marked as unattached that will be used for
 	//the connector
 	SwapAndFreeNodes(cop);
-
+		
 	// Pick a random node whose branch we will bisected by the new subtree.
 	int n = rnd.random_int( numAttachedToRoot );
 	TreeNode* broken = root->FindNode( ++n );
 	assert(broken->anc);//broken can't be the root;
-
+	
 	//DZ 7-6 rewritting this so that broken keeps it's original dlen and connector has a new one
 	//generated.  Exactly how this would be best done is not clear.  For now picking uniform[0.05,0.2]
 	TreeNode *connector;
@@ -1046,7 +960,7 @@ TreeNode *Tree::ContainsBipartition(const Bipartition &bip){
 
 	//turning this back on
 	int tax=bip.FirstPresentTaxon();
-
+	
 	//now start moving down the tree from taxon 1 until a bipart that
 	//conflicts or a match is found
 	//TreeNode *nd=allNodes[1]->anc;
@@ -1063,7 +977,7 @@ TreeNode *Tree::ContainsBipartitionOrComplement(const Bipartition &bip){
 	//this version will detect if the same bipartition exists in the trees, even
 	//if it is in different orientation, which could happen due to rooting
 	//differences
-
+	
 	//NOTE: This requires that the bipartitions are "standardized" meaning that
 	//the one bit is always "on".  In general in other places we do not need that
 	//to be the case
@@ -1071,12 +985,12 @@ TreeNode *Tree::ContainsBipartitionOrComplement(const Bipartition &bip){
 		if(bipartCond == CLEAN_UNSTANDARDIZED)
 			root->StandardizeBipartition();
 		else
-			CalcBipartitions(true);
+			CalcBipartitions(true);		
 		}
 
 	//find a taxon that appears "on" in the bipartition
 	int tax=bip.FirstPresentTaxon();
-
+	
 	//now start moving down the tree from that taxon until a bipart that
 	//conflicts or a match is found
 	//7/17/07 changing this to start from the trivial terminal branch, rather
@@ -1087,10 +1001,10 @@ TreeNode *Tree::ContainsBipartitionOrComplement(const Bipartition &bip){
 		else if(nd->bipart->EqualsEquals(bip)) return nd;
 		else nd=nd->anc;
 		}
-
+		
 	//find a taxon that is NOT "on" in the bipartition
 	tax=bip.FirstNonPresentTaxon();
-
+	
 	//now start moving down the tree from that taxon until a bipart that
 	//conflicts or a match is found
 	//7/17/07 changing this to start from the trivial terminal branch, rather
@@ -1104,7 +1018,7 @@ TreeNode *Tree::ContainsBipartitionOrComplement(const Bipartition &bip){
 		else if(nd->bipart->EqualsEquals(bip)) return nd;
 		else nd=nd->anc;
 		}
-
+		
 	return NULL;
 	}
 
@@ -1119,14 +1033,14 @@ TreeNode *Tree::ContainsMaskedBipartitionOrComplement(const Bipartition &bip, co
 		if(bipartCond == CLEAN_UNSTANDARDIZED)
 			root->StandardizeBipartition();
 		else
-			CalcBipartitions(true);
+			CalcBipartitions(true);		
 		}
 
 	//find a taxon that appears "on" in the bipartition and is on in the mask
 	Bipartition temp = bip;
 	temp.AndEquals(mask);
 	int tax=temp.FirstPresentTaxon();
-
+	
 	//now start moving down the tree from that taxon until we find a
 	//match or reach the root
 	TreeNode *nd=allNodes[tax]->anc;
@@ -1143,7 +1057,7 @@ TreeNode *Tree::ContainsMaskedBipartitionOrComplement(const Bipartition &bip, co
 	temp.Complement();
 	temp.AndEquals(mask);
 	tax=temp.FirstPresentTaxon();
-
+	
 	//now start moving down the tree from that taxon until we find a
 	//match or reach the root
 	nd=allNodes[tax]->anc;
@@ -1154,7 +1068,7 @@ TreeNode *Tree::ContainsMaskedBipartitionOrComplement(const Bipartition &bip, co
 		if(nd->bipart->MaskedEqualsEquals(temp, mask)) return nd;
 		else nd=nd->anc;
 		}
-
+		
 	return NULL;
 	}
 
@@ -1162,12 +1076,12 @@ int Tree::SubtreeBasedRecombination( Tree *t, int recomNodeNum, bool sameModel, 
 	//this will work more or less like the normal bipartition based recombination, except
 	//that the node at which the recombination will occur will be passed in from the population
 	//which knows what subtree each remote is working on
-
+	
 	//we are assuming that the recomNodeNum represents the same bipartition (subtree) in each tree
-
+	
 	TreeNode *tonode=allNodes[recomNodeNum];
 	TreeNode *fromnode=t->allNodes[recomNodeNum];
-
+		
 	tonode->MarkUnattached(true);
 	SwapAndFreeNodes(fromnode);
 	//manually set up the base of the subtree in the totree and point tonode to it
@@ -1180,11 +1094,11 @@ int Tree::SubtreeBasedRecombination( Tree *t, int recomNodeNum, bool sameModel, 
 		}
 	else if(tempanc->right==tonode){
 		tempanc->right=allNodes[fromnode->nodeNum];
-		tonode=tempanc->right;
+		tonode=tempanc->right;			
 		}
 	else{
 		tempanc->left->next=allNodes[fromnode->nodeNum];
-		tonode=tempanc->left->next;
+		tonode=tempanc->left->next;				
 		}
 	tonode->anc=tempanc;
 	tonode->next=tempnext;
@@ -1194,10 +1108,10 @@ int Tree::SubtreeBasedRecombination( Tree *t, int recomNodeNum, bool sameModel, 
 	MimicTopo(fromnode, 1, sameModel);
 	if(sameModel==true) CopyClaIndecesInSubtree(fromnode, true);
 	else DirtyNodesInSubtree(tonode);
-
+	
 	SweepDirtynessOverTree(tonode);
-
-	//try branch length optimization of tonode's branch, to make sure it fits in it's new tree background
+	
+	//try branch length optimization of tonode's branch, to make sure it fits in it's new tree background 
 	OptimizeBranchLength(optPrecision, tonode, true);
 	return 1;
 	}
@@ -1208,7 +1122,7 @@ bool Tree::IdenticalSubtreeTopology(const TreeNode *other){
 	//in the same orientation (ie rooting can fool it)
 	assert(other->IsNotRoot());
 	bool identical;
-
+	
 	if(other->IsRoot() == false){
 		if(other->IsTerminal()) return true;
 		identical=(ContainsBipartition(*other->bipart) != NULL);
@@ -1218,12 +1132,12 @@ bool Tree::IdenticalSubtreeTopology(const TreeNode *other){
 				identical=IdenticalSubtreeTopology(other->right);
 			}
 		}
-
+	
 	return identical;
 	}
 
 bool Tree::IdenticalTopology(const TreeNode *other){
-	//this is intitially called with the root, it will detect any difference in the
+	//this is intitially called with the root, it will detect any difference in the 
 	//overall topology, but assumes the same rooting
 	bool identical;
 	//NOTE: This requires that the bipartitions are "standardized" meaning that
@@ -1233,9 +1147,9 @@ bool Tree::IdenticalTopology(const TreeNode *other){
 		if(bipartCond == CLEAN_UNSTANDARDIZED)
 			root->StandardizeBipartition();
 		else
-			CalcBipartitions(true);
+			CalcBipartitions(true);		
 		}
-
+	
 	if(other->IsRoot() == false){
 		if(other->IsTerminal()) return true;
 		identical= (ContainsBipartition(*other->bipart) != NULL);
@@ -1258,8 +1172,10 @@ bool Tree::IdenticalTopology(const TreeNode *other){
 	return identical;
 	}
 
+//this is the corrected version from the trunk that accurately detects identical trees
+//with collapsed branches
 bool Tree::IdenticalTopologyAllowingRerooting(const TreeNode *other){
-	//this is intitially called with the root, it will detect any difference in the
+	//this is intitially called with the root, it will detect any difference in the 
 	//overall topology
 	bool identical = true;
 	//NOTE: This requires that the bipartitions are "standardized" meaning that
@@ -1269,7 +1185,7 @@ bool Tree::IdenticalTopologyAllowingRerooting(const TreeNode *other){
 		if(bipartCond == CLEAN_UNSTANDARDIZED)
 			root->StandardizeBipartition();
 		else
-			CalcBipartitions(true);
+			CalcBipartitions(true);		
 		}
 
 	if(other->IsTerminal()) return true;
@@ -1337,14 +1253,14 @@ int Tree::BipartitionBasedRecombination( Tree *t, bool sameModel, FLOAT_TYPE opt
 			FLOAT_TYPE toscore, fromscore;
 			toscore=SubTreeScore(tonode);
 			fromscore=t->SubTreeScore(fromnode);
-
+		
 			if(fromscore > (toscore + .1)){
 				found=true;
 				break;
 				}
 			else found=false;
 			}
-*/
+*/	
 	if(found==true){
 		tonode->MarkUnattached(true);
 		SwapAndFreeNodes(fromnode);
@@ -1358,12 +1274,12 @@ int Tree::BipartitionBasedRecombination( Tree *t, bool sameModel, FLOAT_TYPE opt
 			}
 		else if(tempanc->right==tonode){
 			tempanc->right=allNodes[fromnode->nodeNum];
-			tonode=tempanc->right;
+			tonode=tempanc->right;			
 			}
 		else{
 
 			tempanc->left->next=allNodes[fromnode->nodeNum];
-			tonode=tempanc->left->next;
+			tonode=tempanc->left->next;				
 			}
 		tonode->anc=tempanc;
 		tonode->next=tempnext;
@@ -1373,8 +1289,8 @@ int Tree::BipartitionBasedRecombination( Tree *t, bool sameModel, FLOAT_TYPE opt
 		MimicTopo(fromnode, 1, sameModel);
 		if(sameModel==true) CopyClaIndecesInSubtree(fromnode, true);
 		else DirtyNodesInSubtree(tonode);
-
-		//try branch length optimization of tonode's branch, to make sure it fits in it's new tree background
+		
+		//try branch length optimization of tonode's branch, to make sure it fits in it's new tree background 
 		SweepDirtynessOverTree(tonode);
 		//OptimizeBranchLength(optPrecision, tonode, true);
 		OptimizeBranchesWithinRadius(tonode, optPrecision, 0, NULL);
@@ -1385,7 +1301,7 @@ int Tree::BipartitionBasedRecombination( Tree *t, bool sameModel, FLOAT_TYPE opt
 	else return -1;
 	return 1;
 	}
-
+	
 //this is essentially a version of TopologyMutator that goes through cut nodes in order
 //and for each cut node goes through the broken nodes in order.  The swaps are performed
 //on a temporary tree
@@ -1393,10 +1309,10 @@ void Tree::DeterministicSwapperByCut(Individual *source, double optPrecision, in
 
 	TreeNode *cut;
 	int swapNum=0;
-
+	
 	Individual tempIndiv;
 	tempIndiv.treeStruct=new Tree();
-
+	
 	tempIndiv.CopySecByRearrangingNodesOfFirst(tempIndiv.treeStruct, source);
 
 	//ensure that the starting tree is optimal up to the required precision
@@ -1412,31 +1328,31 @@ void Tree::DeterministicSwapperByCut(Individual *source, double optPrecision, in
 	else sprintf(str, "determImpsCut.%d.%f.tre", range, optPrecision);
 	ofstream better(str);
 	better.precision(9);
-	data->BeginNexusTreesBlock(better);
+	dataPart->BeginNexusTreesBlock(better);
 
 #ifdef OUTPUT_ALL
 	if(furthestFirst) sprintf(str, "determAllCutR.%d.%f.tre", range, optPrecision);
-	else sprintf(str, "determAllCut.%d.%f.tre", range, optPrecision);
-
+	else sprintf(str, "determAllCut.%d.%f.tre", range, optPrecision);	
+	
 	ofstream all(str);
-	data->BeginNexusTreesBlock(all);
+	dataPart->BeginNexusTreesBlock(all);
 #endif
 
 	if(furthestFirst) sprintf(str, "determCutR%d.%f.log", range, optPrecision);
 	else sprintf(str, "determCut%d.%f.log", range, optPrecision);
 	FILE *log = fopen(str, "w");
-
+	
 	//allocate a treeString
-	double taxsize=log10((double) ((double)data->NTax())*data->NTax()*2);
-	int stringSize=(int)((data->NTax()*2)*(10+DEF_PRECISION));
+	double taxsize=log10((double) ((double)dataPart->NTax())*dataPart->NTax()*2);
+	int stringSize=(int)((dataPart->NTax()*2)*(10+DEF_PRECISION));
 	char *treeString=new char[stringSize];
 	stringSize--;
 	treeString[stringSize]='\0';
 	bool newBest=false;
 	attemptedSwaps.ClearAttemptedSwaps();
-
+	
 	int startC, c=1;
-
+		
 	int acceptedSwaps = 0;
 	startC = c;
 
@@ -1448,7 +1364,7 @@ void Tree::DeterministicSwapperByCut(Individual *source, double optPrecision, in
 
 		for(list<ReconNode>::iterator b = tempIndiv.treeStruct->sprRang.begin();b != tempIndiv.treeStruct->sprRang.end();b++){
 			ReconNode *broken = &(*b);
-
+			
 			//log the swap about to be performed.  Although this func goes through the swaps in order,
 			//there will be duplication because of the way that NNIs are performed.  Two different cut
 			//nodes can be reconnected with an NNI such that the same topology results
@@ -1470,7 +1386,7 @@ void Tree::DeterministicSwapperByCut(Individual *source, double optPrecision, in
 
 #ifdef OUTPUT_ALL
 				tempIndiv.treeStruct->root->MakeNewick(treeString, false, true);
-				all << "tree " << c << "." << b->reconDist << "= [&U][" << lnL << "]" << treeString << ";" << endl;
+				all << "tree " << c << "." << b->reconDist << "= [&U][" << lnL << "]" << treeString << ";" << endl;				
 #endif
 
 				if(tempIndiv.treeStruct->lnL > (lnL+optPrecision)){
@@ -1520,10 +1436,10 @@ void Tree::DeterministicSwapperByDist(Individual *source, double optPrecision, i
 
 	TreeNode *cut;
 	int swapNum=0;
-
+	
 	Individual tempIndiv;
 	tempIndiv.treeStruct=new Tree();
-
+	
 	tempIndiv.CopySecByRearrangingNodesOfFirst(tempIndiv.treeStruct, source);
 
 	//ensure that the starting tree is optimal up to the required precision
@@ -1540,23 +1456,23 @@ void Tree::DeterministicSwapperByDist(Individual *source, double optPrecision, i
 
 	ofstream better(str);
 	better.precision(9);
-	data->BeginNexusTreesBlock(better);
+	dataPart->BeginNexusTreesBlock(better);
 
 #ifdef OUTPUT_ALL
 	if(furthestFirst) sprintf(str, "determAllDistR.%d.%f.tre", range, optPrecision);
-	else sprintf(str, "determAllDist.%d.%f.tre", range, optPrecision);
-
+	else sprintf(str, "determAllDist.%d.%f.tre", range, optPrecision);	
+	
 	ofstream all(str);
-	data->BeginNexusTreesBlock(all);
+	dataPart->BeginNexusTreesBlock(all);
 #endif
 
 	if(furthestFirst) sprintf(str, "determDistR%d.%f.log", range, optPrecision);
 	else sprintf(str, "determDist%d.%f.log", range, optPrecision);
 	FILE *log = fopen(str, "w");
-
+	
 	//allocate a treeString
-	double taxsize=log10((double) ((double)data->NTax())*data->NTax()*2);
-	int stringSize=(int)((data->NTax()*2)*(10+DEF_PRECISION));
+	double taxsize=log10((double) ((double)dataPart->NTax())*dataPart->NTax()*2);
+	int stringSize=(int)((dataPart->NTax()*2)*(10+DEF_PRECISION));
 	char *treeString=new char[stringSize];
 	stringSize--;
 	treeString[stringSize]='\0';
@@ -1577,7 +1493,7 @@ void Tree::DeterministicSwapperByDist(Individual *source, double optPrecision, i
 
 		for(list<ReconNode>::iterator b = sprRang.GetFirstNodeAtDist(currentDist);b != sprRang.end() && b->reconDist == currentDist;b++){
 			ReconNode *broken = &(*b);
-
+			
 			//log the swap about to be performed.  Although this func goes through the swaps in order,
 			//there will be duplication because of the way that NNIs are performed.  Two different cut
 			//nodes can be reconnected with an NNI such that the same topology results
@@ -1595,15 +1511,15 @@ void Tree::DeterministicSwapperByDist(Individual *source, double optPrecision, i
 				else{
 					tempIndiv.treeStruct->SPRMutate(cut->nodeNum, broken, optPrecision, 0);
 					}
-
+					
 #ifdef OUTPUT_ALL
 				tempIndiv.treeStruct->root->MakeNewick(treeString, false, true);
-				all << "tree " << c << "." << b->reconDist << "= [&U][" << lnL << "]" << treeString << ";" << endl;
+				all << "tree " << c << "." << b->reconDist << "= [&U][" << lnL << "]" << treeString << ";" << endl;	
 #endif
 
 				if(tempIndiv.treeStruct->lnL > (lnL+optPrecision)){
 					outman.UserMessage("%f\t%f\t%d\t%d", tempIndiv.treeStruct->lnL, lnL - tempIndiv.treeStruct->lnL, c, b->reconDist);
-
+				
 					source->CopySecByRearrangingNodesOfFirst(source->treeStruct, &tempIndiv, true);
 					lnL = tempIndiv.treeStruct->lnL;
 
@@ -1629,9 +1545,9 @@ void Tree::DeterministicSwapperByDist(Individual *source, double optPrecision, i
 			else
 				currentDist = 1;
 			newBest = false;
-			}
+			}	
 		else if(c == startC){
-			if(furthestFirst)
+			if(furthestFirst) 
 				currentDist--;
 			else currentDist++;
 			outman.UserMessage("dist = %d", currentDist);
@@ -1677,10 +1593,10 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 
 	TreeNode *cut;
 	int swapNum=0;
-
+	
 	Individual tempIndiv;
 	tempIndiv.treeStruct=new Tree();
-
+	
 	tempIndiv.CopySecByRearrangingNodesOfFirst(tempIndiv.treeStruct, source);
 
 	//ensure that the starting tree is optimal up to the required precision
@@ -1695,21 +1611,21 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 	sprintf(str, "determImpsRand.%d.%f.tre", range, optPrecision);
 	ofstream better(str);
 	better.precision(9);
-	data->BeginNexusTreesBlock(better);
+	dataPart->BeginNexusTreesBlock(better);
 
 #ifdef OUTPUT_ALL
-	sprintf(str, "determAllRand.%d.%f.tre", range, optPrecision);
-
+	sprintf(str, "determAllRand.%d.%f.tre", range, optPrecision);	
+	
 	ofstream all(str);
-	data->BeginNexusTreesBlock(all);
+	dataPart->BeginNexusTreesBlock(all);
 #endif
-
+	
 	sprintf(str, "determRand%d.%f.log", range, optPrecision);
 	FILE *log = fopen(str, "w");
 
 	//allocate a treeString
-	double taxsize=log10((double) ((double)data->NTax())*data->NTax()*2);
-	int stringSize=(int)((data->NTax()*2)*(10+DEF_PRECISION));
+	double taxsize=log10((double) ((double)dataPart->NTax())*dataPart->NTax()*2);
+	int stringSize=(int)((dataPart->NTax()*2)*(10+DEF_PRECISION));
 	char *treeString=new char[stringSize];
 	stringSize--;
 	treeString[stringSize]='\0';
@@ -1732,7 +1648,7 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 		cut = tempIndiv.treeStruct->allNodes[c];
 		listIt b = cuts[c].NthElement(rnd.random_int(cuts[c].size()));
 		ReconNode *broken = &(*b);
-
+			
 		//log the swap about to be performed.  Although this func goes through the swaps in order,
 		//there will be duplication because of the way that NNIs are performed.  Two different cut
 		//nodes can be reconnected with an NNI such that the same topology results
@@ -1754,9 +1670,9 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 				}
 #ifdef OUTPUT_ALL
 			tempIndiv.treeStruct->root->MakeNewick(treeString, false, true);
-			all << "tree " << c << "." << b->nodeNum << "." << b->reconDist << "." << swapsOnCurrent << " = [&U][" << lnL << "]" << treeString << ";" << endl;
+			all << "tree " << c << "." << b->nodeNum << "." << b->reconDist << "." << swapsOnCurrent << " = [&U][" << lnL << "]" << treeString << ";" << endl;	
 #endif
-
+			
 			if(tempIndiv.treeStruct->lnL > (lnL+optPrecision)){
 				outman.UserMessage("%f\t%f\t%d\t%d", tempIndiv.treeStruct->lnL, lnL - tempIndiv.treeStruct->lnL, c, b->reconDist);
 				source->CopySecByRearrangingNodesOfFirst(source->treeStruct, &tempIndiv, true);
@@ -1783,7 +1699,7 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 		if(swapNum %100 == 0) fprintf(log, "%d\t%d\t%f\n", swapNum, acceptedSwaps, lnL);
 		swapsLeft = tempIndiv.treeStruct->FillWeightsForAllSwaps(&cuts[0], &cutWeights[0]);
 		}while(swapsLeft);
-
+	
 	outman.UserMessage("%d swaps before completion", swapsOnCurrent);
 
 /*	while(1){
@@ -1818,7 +1734,7 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 		while(sprRang.size() > 0){
 			b = sprRang.NthElement(rnd.random_int(sprRang.size()));
 			ReconNode *broken = &(*b);
-
+			
 			//log the swap about to be performed.  Although this func goes through the swaps in order,
 			//there will be duplication because of the way that NNIs are performed.  Two different cut
 			//nodes can be reconnected with an NNI such that the same topology results
@@ -1838,9 +1754,9 @@ void Tree::DeterministicSwapperRandom(Individual *source, double optPrecision, i
 					}
 #ifdef OUTPUT_ALL
 				tempIndiv.treeStruct->root->MakeNewick(treeString, false, true);
-				all << "tree " << c << "." << b->reconDist << "= [&U][" << lnL << "]" << treeString << ";" << endl;
+				all << "tree " << c << "." << b->reconDist << "= [&U][" << lnL << "]" << treeString << ";" << endl;	
 #endif
-
+				
 				if(tempIndiv.treeStruct->lnL > (lnL+optPrecision)){
 					outman.UserMessage("%f\t%f\t%d\t%d", tempIndiv.treeStruct->lnL, lnL - tempIndiv.treeStruct->lnL, c, b->reconDist);
 					source->CopySecByRearrangingNodesOfFirst(source->treeStruct, &tempIndiv, true);
@@ -1882,7 +1798,7 @@ int Tree::TopologyMutator(FLOAT_TYPE optPrecision, int range, int subtreeNode){
 #ifdef EQUIV_CALCS
 	dirtyEQ = true;
 #endif
-
+	
 	int err=0;
 	int ret=0;
 	int tryNum = 0;
@@ -1892,23 +1808,30 @@ int Tree::TopologyMutator(FLOAT_TYPE optPrecision, int range, int subtreeNode){
 			GatherValidReconnectionNodes(range, cut, NULL);
 			}while(sprRang.size()==0);
 
-		if((FloatingPointEquals(uniqueSwapBias, 1.0, max(1.0e-8, GARLI_FP_EPS * 2.0)) && FloatingPointEquals(distanceSwapBias, 1.0, max(1.0e-8, GARLI_FP_EPS * 2))) || range < 0)
+		if((FloatingPointEquals(uniqueSwapBias, 1.0, 1e-8) && FloatingPointEquals(distanceSwapBias, 1.0, 1e-8)) || range < 0)
 			broken = sprRang.RandomReconNode();
 		else{//only doing this on limSPR and NNI
 			err = AssignWeightsToSwaps(cut);
 			err = err && (tryNum++ < 5);
-			if((!swapBasedTerm) || (swapBasedTerm && !err)){
-				//this was a stupid bug.  Err was being paid attention by looping over the
+#ifdef SWAP_BASED_TERMINATION
+			if(!err){
+#else
+			if(1){
+				//this was a stupid bug.  Err was being paid attention by looping over the 
 				//outer do loop because it was not being reset below when returning from ReorientSubtreeSPR
 				//as it is with normal SPR
-				if(!swapBasedTerm)
-					err = 0;
+				err = 0;
+#endif
 				sprRang.CalcProbsFromWeights();
 				broken = sprRang.ChooseNodeByWeight();
 				}
 			}
 
-		if((!swapBasedTerm) || (swapBasedTerm && !err)){
+#ifdef SWAP_BASED_TERMINATION
+		if(!err){
+#else
+		if(1){
+#endif
 			//log the swap about to be performed
 			if( ! ((uniqueSwapBias == 1.0 && distanceSwapBias == 1.0) || range < 0)){
 				Bipartition proposed;
@@ -1932,7 +1855,7 @@ int Tree::TopologyMutator(FLOAT_TYPE optPrecision, int range, int subtreeNode){
 					if(unique == true) ReorientSubtreeSPRMutateDummy(cut->nodeNum, broken, optPrecision);
 					else return broken->reconDist * -1;
 				#endif
-				ReorientSubtreeSPRMutate(cut->nodeNum, broken, optPrecision);
+				ReorientSubtreeSPRMutate(cut->nodeNum, broken, optPrecision);	
 				ret=broken->reconDist * -1;
 				}
 			else{
@@ -1976,23 +1899,23 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 	It now assumes that the cut branch has NOT YET BEEN DETACHED. This is important so that
 	when branches are chosen without a viable reconnection due to a constraint another cut
 	can be chosen without having the put the tree back together again
-	1.	Gather all nodes within maxRange.  This can include nodes that are des of the
+	1.	Gather all nodes within maxRange.  This can include nodes that are des of the 
 		cut node.  In this case the portion of the tree containing the root is considered
 		the subtree to be reattached, and the swap would be done by ReorientSubtreeSPRMutate
 	2.	Keep information on the potential reconnection nodes, including reconnection distance and
-		branchlength distance.  This allows for various schemes of differentially weighting the
+		branchlength distance.  This allows for various schemes of differentially weighting the 
 		swaps.
 	3.	filter out reconnection nodes incompatible with constraints
 	*/
 	sprRang.clear();
 	const TreeNode *center=cut->anc;
-
+	
 	//add the descendent branches
-	if(center->left != cut)
+	if(center->left != cut) 
 		sprRang.AddNode(center->left->nodeNum, 0, (float) center->left->dlen);
-	if(center->left->next != cut)
+	if(center->left->next != cut) 
 		sprRang.AddNode(center->left->next-> nodeNum, 0, (float) center->left->next->dlen);
-
+	
 	//add either the center node itself or the third descendent in the case of the root
 	if(center->IsNotRoot()){
 		if(center->anc != subtreeNode)
@@ -2002,9 +1925,9 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 		if(center->left->next->next != cut)
 			sprRang.AddNode(center->left->next->next->nodeNum, 0, (float) center->left->next->next->dlen);
 		}
-
+	
 	assert(sprRang.size() == 2);
-
+	
 	for(int curDist = 0; curDist < maxDist || maxDist < 0; curDist++){
 		list<ReconNode>::iterator it=sprRang.GetFirstNodeAtDist(curDist);
 		if(it == sprRang.end()){
@@ -2013,10 +1936,10 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 		for(; it != sprRang.end() && it->reconDist == curDist; it++){
 			TreeNode *cur=allNodes[it->nodeNum];
 			assert(cur->IsNotRoot());
-
-			if(cur->left!=NULL && cur->left!=cut)
+			
+			if(cur->left!=NULL && cur->left!=cut) 
 			    sprRang.AddNode(cur->left->nodeNum, curDist+1, (float) (it->pathlength + cur->left->dlen));
-			if(cur->right!=NULL && cur->right!=cut)
+			if(cur->right!=NULL && cur->right!=cut) 
 		    	sprRang.AddNode(cur->right->nodeNum, curDist+1, (float) (it->pathlength + cur->right->dlen));
 			if(cur->next!=NULL && cur->next!=cut){
 			    sprRang.AddNode(cur->next->nodeNum, curDist+1, (float) (it->pathlength + cur->next->dlen));
@@ -2037,7 +1960,7 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 			 	}
 		    }
 		}
-
+	
 	if(maxDist != 1 && cut->IsInternal()){
 		//Gather nodes within the cut subtree to allow SPRs in which the portion of the tree containing
 		//the root is considered the subtree to be reattached
@@ -2046,16 +1969,16 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 		sprRang.AddNode(cut->right->nodeNum, 0, (float) cut->right->dlen, true);
 
 		for(int curDist = 0; curDist < maxDist || maxDist < 0; curDist++){
-			list<ReconNode>::iterator it=sprRang.GetFirstNodeAtDistWithinCutSubtree(curDist);
+			list<ReconNode>::iterator it=sprRang.GetFirstNodeAtDistWithinCutSubtree(curDist);	
 			if(it == sprRang.end()){
 				break; //need this to break out of loop when curDist exceeds any branches in the tree
 				}
 			for(; it != sprRang.end() && it->reconDist == curDist; it++){
 				TreeNode *cur=allNodes[it->nodeNum];
-
-				if(cur->left!=NULL)
+				
+				if(cur->left!=NULL) 
 					sprRang.AddNode(cur->left->nodeNum, curDist+1, (float) (it->pathlength + cur->left->dlen), true);
-				if(cur->right!=NULL)
+				if(cur->right!=NULL) 
 		    		sprRang.AddNode(cur->right->nodeNum, curDist+1, (float) (it->pathlength + cur->right->dlen), true);
 				if(cur->next!=NULL){
 					sprRang.AddNode(cur->next->nodeNum, curDist+1, (float) (it->pathlength + cur->next->dlen), true);
@@ -2068,26 +1991,11 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 	sprRang.RemoveNodesOfDist(0); //remove branches adjacent to cut
 //	if(maxDist != 1)
 //		sprRang.RemoveNodesOfDist(1); //remove branches equivalent to NNIs
-
+	
 #ifdef CONSTRAINTS
 	//now deal with constraints, if any
 	if(constraints.size() > 0){
-/*		int ok =0;
-		int bad = 0;
-		int calls = 0;
-		int attach = sprRang.size();
-*/		bool bypass = false;
-
-		//6/30/09 If all constraints are backbone on the same set of taxa, check that both sides of the split where the tree was broken
-		//actually appear in the backbone mask.  Otherwise the swap is always valid and we can skip the whole following loop.
-		//This is very helpful when, for example, a terminal taxon not in the backbone is cut.
-		CalcBipartitions(true);
-		if(Constraint::allBackbone && Constraint::sharedMask){
-			if(!(constraints[0].GetBackboneMask()->HasIntersection(*cut->bipart, NULL)) || !(constraints[0].GetBackboneMask()->HasIntersectionWithComplement(*cut->bipart, NULL))){
-				bypass = true;
-				}
-			}
-		if(!bypass && sprRang.size() != 0){
+		if(sprRang.size() != 0){
 			Bipartition proposed;
 			listIt it=sprRang.begin();
 			do{
@@ -2095,45 +2003,29 @@ void Tree::GatherValidReconnectionNodes(int maxDist, TreeNode *cut, const TreeNo
 				CalcBipartitions(true);
 				proposed.FillWithXORComplement(*(cut->bipart), *(allNodes[broken->nodeNum]->bipart));
 				bool allowed = true;
-				
-				//6/23/09 This call was moved here from within SwapAllowedByConstraint.  This saves a lot
-				//of work when looping over many constraints for a single swap that really only requires a single adjustment.
-				//Doing the adjustment isn't necessary for positive non-backbone constraints with no mask (and isn't always
-				//necessary when there is a mask either) so skip this if we can
-				if(it->withinCutSubtree == false && (partialMask || Constraint::anyBackbone || constraints[0].IsPositive() == false))
-					AdjustBipartsForSwap(cut->nodeNum, broken->nodeNum);
-
 				for(vector<Constraint>::iterator conit=constraints.begin();conit!=constraints.end();conit++){
-//					calls++;
-					allowed = SwapAllowedByConstraint((*conit), cut, &*it, proposed, partialMask);
+					allowed = SwapAllowedByConstraint((*conit), cut, &*it, proposed, partialMask); 
 					if(!allowed) break;
 					}
-//				if(allowed) ok++;
-//				else bad++;
 				if(!allowed) it=sprRang.RemoveElement(it);
 				else it++;
 				}while(it != sprRang.end());
 			}
-/*		if(bypass)
-			outman.UserMessage("%d max range, %d attach, %d calls, %d ok, %d bad, BYPASSED", maxDist, attach, calls, ok, bad);
-		else
-			outman.UserMessage("%d max range, %d attach, %d calls, %d ok, %d bad", maxDist, attach, calls, ok, bad);
-*/		}
+		else return;
+		}
 #endif
 	}
 
 //same as the normal GatherValidReconnectionNodes, but fills ReconList passed in, not the normal tree one
-//6/23/09 I don't think that this has been updated for the most recent constraint implementation, so shouldn't be being used
 void Tree::GatherValidReconnectionNodes(ReconList &thisList, int maxDist, TreeNode *cut, const TreeNode *subtreeNode, Bipartition *partialMask /*=NULL*/){
-	assert(0);
 	const TreeNode *center=cut->anc;
-
+	
 	//add the descendent branches
-	if(center->left != cut)
+	if(center->left != cut) 
 		thisList.AddNode(center->left->nodeNum, 0, (float) center->left->dlen);
-	if(center->left->next != cut)
+	if(center->left->next != cut) 
 		thisList.AddNode(center->left->next-> nodeNum, 0, (float) center->left->next->dlen);
-
+	
 	//add either the center node itself or the third descendent in the case of the root
 	if(center->IsNotRoot()){
 		if(center->anc != subtreeNode)
@@ -2143,9 +2035,9 @@ void Tree::GatherValidReconnectionNodes(ReconList &thisList, int maxDist, TreeNo
 		if(center->left->next->next != cut)
 			thisList.AddNode(center->left->next->next->nodeNum, 0, (float) center->left->next->next->dlen);
 		}
-
+	
 	assert(thisList.size() == 2);
-
+	
 	for(int curDist = 0; curDist < maxDist || maxDist < 0; curDist++){
 		//list<ReconNode>::iterator it=thisList.GetFirstNodeAtDist(curDist);
 		listIt it=thisList.GetFirstNodeAtDist(curDist);
@@ -2155,10 +2047,10 @@ void Tree::GatherValidReconnectionNodes(ReconList &thisList, int maxDist, TreeNo
 		for(; it != thisList.end() && it->reconDist == curDist; it++){
 			TreeNode *cur=allNodes[it->nodeNum];
 			assert(cur->IsNotRoot());
-
-			if(cur->left!=NULL && cur->left!=cut)
+			
+			if(cur->left!=NULL && cur->left!=cut) 
 			    thisList.AddNode(cur->left->nodeNum, curDist+1, (float) (it->pathlength + cur->left->dlen));
-			if(cur->right!=NULL && cur->right!=cut)
+			if(cur->right!=NULL && cur->right!=cut) 
 		    	thisList.AddNode(cur->right->nodeNum, curDist+1, (float) (it->pathlength + cur->right->dlen));
 			if(cur->next!=NULL && cur->next!=cut){
 			    thisList.AddNode(cur->next->nodeNum, curDist+1, (float) (it->pathlength + cur->next->dlen));
@@ -2179,7 +2071,7 @@ void Tree::GatherValidReconnectionNodes(ReconList &thisList, int maxDist, TreeNo
 			 	}
 		    }
 		}
-
+	
 	if(maxDist != 1 && cut->IsInternal()){
 		//Gather nodes within the cut subtree to allow SPRs in which the portion of the tree containing
 		//the root is considered the subtree to be reattached
@@ -2189,16 +2081,16 @@ void Tree::GatherValidReconnectionNodes(ReconList &thisList, int maxDist, TreeNo
 
 		for(int curDist = 0; curDist < maxDist || maxDist < 0; curDist++){
 			//list<ReconNode>::iterator it=thisList.GetFirstNodeAtDistWithinCutSubtree(curDist);
-			listIt it=thisList.GetFirstNodeAtDistWithinCutSubtree(curDist);
+			listIt it=thisList.GetFirstNodeAtDistWithinCutSubtree(curDist);	
 			if(it == thisList.end()){
 				break; //need this to break out of loop when curDist exceeds any branches in the tree
 				}
 			for(; it != thisList.end() && it->reconDist == curDist; it++){
 				TreeNode *cur=allNodes[it->nodeNum];
-
-				if(cur->left!=NULL)
+				
+				if(cur->left!=NULL) 
 					thisList.AddNode(cur->left->nodeNum, curDist+1, (float) (it->pathlength + cur->left->dlen), true);
-				if(cur->right!=NULL)
+				if(cur->right!=NULL) 
 		    		thisList.AddNode(cur->right->nodeNum, curDist+1, (float) (it->pathlength + cur->right->dlen), true);
 				if(cur->next!=NULL){
 					thisList.AddNode(cur->next->nodeNum, curDist+1, (float) (it->pathlength + cur->next->dlen), true);
@@ -2236,7 +2128,7 @@ void Tree::GatherValidReconnectionNodes(ReconList &thisList, int maxDist, TreeNo
 	}
 
 bool Tree::AssignWeightsToSwaps(TreeNode *cut){
-	//Assign weights to each swap (reconnection node) based on
+	//Assign weights to each swap (reconnection node) based on 
 	//some criterion
 	CalcBipartitions(true);
 
@@ -2257,17 +2149,17 @@ bool Tree::AssignWeightsToSwaps(TreeNode *cut){
 			someUnique = true;
 			if((*it).reconDist - 1 < 1000)
 				(*it).weight = distanceSwapPrecalc[(*it).reconDist - 1];
-			else
+			else 
 				(*it).weight = distanceSwapPrecalc[999];
 			}
 		else{
 			if((*thisSwap).Count() < 500)
 				(*it).weight = uniqueSwapPrecalc[(*thisSwap).Count()];
-			else
+			else 
 				(*it).weight = uniqueSwapPrecalc[499];
 			if((*it).reconDist - 1 < 1000)
 				(*it).weight *= distanceSwapPrecalc[(*it).reconDist - 1];
-			else
+			else 
 				(*it).weight *= distanceSwapPrecalc[999];
 /*			if((*it).reconDist - 1 < 1000 && (*thisSwap).Count() < 500)
 				(*it).weight = uniqueSwapPrecalc[(*thisSwap).Count()] * distanceSwapPrecalc[(*it).reconDist - 1];
@@ -2279,7 +2171,7 @@ bool Tree::AssignWeightsToSwaps(TreeNode *cut){
 
 int Tree::SPRMutateDummy(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int subtreeNode){
 	//this is just a spoof version of SPRMutate that will perform the same mutation
-	//several times with different optimiation settings, but will otherwise
+	//several times with different optimiation settings, but will otherwise 
 	//maintain exactly the same program flow because it resets the seed
 
 #ifndef VARIABLE_OPTIMIZATION
@@ -2287,20 +2179,20 @@ int Tree::SPRMutateDummy(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, 
 #else
 	Individual tempIndiv;
 	tempIndiv.treeStruct=new Tree();
-
+	
 	Individual sourceIndiv;
 	sourceIndiv.treeStruct=this;
 	sourceIndiv.mod->CopyModel(this->mod);
-
+		
 	int savedSeed;
-
+	
 	var.precision(10);
 	var << "SPR" << "\t" << broke->reconDist << "\t" << lnL << "\t";
-
+	
 	tempIndiv.CopySecByRearrangingNodesOfFirst(tempIndiv.treeStruct, &sourceIndiv);
 //	FLOAT_TYPE prec[5]={(FLOAT_TYPE).01, (FLOAT_TYPE).5, (FLOAT_TYPE).01, (FLOAT_TYPE).01, (FLOAT_TYPE).01};
 	FLOAT_TYPE origThresh = treeRejectionThreshold;
-/*
+/*	
 	treeRejectionThreshold = 10000;
 	for(int i=0;i<1;i++){
 		savedSeed = rnd.seed();
@@ -2350,7 +2242,7 @@ int Tree::SPRMutateDummy(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, 
 // 7/21/06 This function is now called by TopologyMutator to actually do the rearrangement
 //It has the cut and broken nodenums passed in.  It also does NNI's
 int Tree::SPRMutate(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int subtreeNode){
-	//if the optPrecision passed in is < 0 it means that we're just trying to
+	//if the optPrecision passed in is < 0 it means that we're just trying to 
 	//make the tree structure for some reason, but don't have CLAs allocated
 	//and don't intend to do blen opt
 	bool createTopologyOnly=false;
@@ -2386,7 +2278,7 @@ int Tree::SPRMutate(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int s
 			return -1;
 			}
 		}
-
+	
 	//all clas below cut will need to be recalced
 	if(createTopologyOnly == false) SweepDirtynessOverTree(cut);
 	TreeNode *replaceForConn;
@@ -2398,7 +2290,7 @@ int Tree::SPRMutate(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int s
 				replaceForConn=connector->right;
 		   		}
 		   	else{
-		   		assert(cut==connector->right);
+		   		assert(cut==connector->right); 
 		   		replaceForConn=connector->left;
 		   		}
 			SetBranchLength(replaceForConn, min(max_brlen, replaceForConn->dlen+connector->dlen));
@@ -2441,13 +2333,13 @@ int Tree::SPRMutate(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int s
 			SetBranchLength(root->right, min(max_brlen, root->right->dlen+connector->dlen));
 			sib=root->right;
 			}
-
+			
 		//add the connectors two desccendants as descendants of the root
 		assert(connector->right==connector->left->next);
 		connector->SubstituteNodeWithRespectToAnc(connector->left);
 		root->AddDes(connector->right);
 		}
-
+	
 	//establish correct topology for connector and cut nodes
 	if(createTopologyOnly == false) MakeNodeDirty(connector);
 	cut->anc=connector;
@@ -2465,7 +2357,7 @@ int Tree::SPRMutate(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int s
 		SweepDirtynessOverTree(connector, cut);
 		if(broke->reconDist > 1)
 			OptimizeBranchesWithinRadius(connector, optPrecision, subtreeNode, sib);
-		else
+		else 
 			OptimizeBranchesWithinRadius(connector, optPrecision, subtreeNode, NULL);
 		}
 	bipartCond = DIRTY;
@@ -2474,26 +2366,26 @@ int Tree::SPRMutate(int cutnum, ReconNode *broke, FLOAT_TYPE optPrecision, int s
 
 void Tree::ReorientSubtreeSPRMutateDummy(int oroot, ReconNode *nroot, FLOAT_TYPE optPrecision){
 	//this is just a spoof version of SPRMutate that will perform the same mutation
-	//several times with different optimiation settings, but will otherwise
+	//several times with different optimiation settings, but will otherwise 
 	//maintain exactly the same program flow because it resets the seed
 #ifndef VARIABLE_OPTIMIZATION
 	assert(0);
 #else
 	Individual tempIndiv;
 	tempIndiv.treeStruct=new Tree();
-
+	
 	Individual sourceIndiv;
 	sourceIndiv.treeStruct=this;
 	sourceIndiv.mod->CopyModel(this->mod);
-
+		
 	int savedSeed;
 	var.precision(10);
 	var << "reSPR" << "\t" << nroot->reconDist << "\t" << lnL << "\t";
 	//FLOAT_TYPE prec[5]={(FLOAT_TYPE).01, (FLOAT_TYPE).5, (FLOAT_TYPE).01, (FLOAT_TYPE).01, (FLOAT_TYPE).01};
-
+	
 	tempIndiv.CopySecByRearrangingNodesOfFirst(tempIndiv.treeStruct, &sourceIndiv);
 	FLOAT_TYPE origThresh = treeRejectionThreshold;
-/*
+/*		
 	treeRejectionThreshold = 10000;
 
 	for(int i=0;i<1;i++){
@@ -2542,12 +2434,12 @@ void Tree::ReorientSubtreeSPRMutateDummy(int oroot, ReconNode *nroot, FLOAT_TYPE
 void Tree::ReorientSubtreeSPRMutate(int oroot, ReconNode *nroot, FLOAT_TYPE optPrecision){
 	//this is used to allow the other half of SPR rearrangements in which
 	//the part of the tree containing the root is considered the subtree
-	//to be attached.  Terminology is VERY confusing here. newRoot is the
-	//branch to be bisected (rooted at).  oldRoot is the node that is at the
+	//to be attached.  Terminology is VERY confusing here. newRoot is the 
+	//branch to be bisected (rooted at).  oldRoot is the node that is at the 
 	//base of the subtree currently.  After the rearrangement it will still
 	//be at the base of the subtree, but in the middle of a different branch
 
-	//if the optPrecision passed in is < 0 it means that we're just trying to
+	//if the optPrecision passed in is < 0 it means that we're just trying to 
 	//make the tree structure for some reason, but don't have CLAs allocated
 	//and don't intend to do blen opt
 	bool createTopologyOnly=false;
@@ -2563,13 +2455,13 @@ void Tree::ReorientSubtreeSPRMutate(int oroot, ReconNode *nroot, FLOAT_TYPE optP
 	//first detatch the subtree and make it free floating.  This will
 	//leave oroot in its place and fuse two branches in the subtree
 	//into a branch connecting one of oroots des to its other des
-	//This makes that des a tricotomy with a NULL anc.  Then the rotating
+	//This makes that des a tricotomy with a NULL anc.  Then the rotating 
 	//begins.
 	if(createTopologyOnly == false){
 		SweepDirtynessOverTree(oldroot->left);
 		SweepDirtynessOverTree(oldroot->right);
 		}
-
+	
 	TreeNode *prunePoint;
 	TreeNode *tempRoot;
 	if(oldroot->left->IsInternal()){
@@ -2587,7 +2479,7 @@ void Tree::ReorientSubtreeSPRMutate(int oroot, ReconNode *nroot, FLOAT_TYPE optP
 	tempRoot->anc=NULL;
 
 	if(createTopologyOnly == false) MakeNodeDirty(tempRoot);
-
+	
 	//collect each of the nodes that will need to be flipped
 	vector<TreeNode *> path;
 	path.reserve(10);
@@ -2605,7 +2497,7 @@ void Tree::ReorientSubtreeSPRMutate(int oroot, ReconNode *nroot, FLOAT_TYPE optP
 	//now disconnect the oldroot
 	oldroot->left = NULL;
 	oldroot->right = NULL;
-
+	
 	//and add the new des
 	TreeNode *oldanc=newroot->anc;
 	oldanc->RemoveDes(newroot);
@@ -2614,7 +2506,7 @@ void Tree::ReorientSubtreeSPRMutate(int oroot, ReconNode *nroot, FLOAT_TYPE optP
 
 	SetBranchLength(oldroot->left, dividedBlen);
 	SetBranchLength(oldroot->right, dividedBlen);
-
+ 
 	if(createTopologyOnly == false){
 		SweepDirtynessOverTree(newroot);
 		SweepDirtynessOverTree(oldroot);
@@ -2642,7 +2534,7 @@ void Tree::LoadConstraints(ifstream &con, int nTaxa){
 			con.get(c);
 			}
 
-		//getline works strangely on some compilers.  temp should end with ; or \0 , but
+		//getline works strangely on some compilers.  temp should end with ; or \0 , but 
 		//might end with \r or \n
 		size_t len=temp.length();
 		char last=temp.c_str()[len-1];
@@ -2700,7 +2592,7 @@ void Tree::LoadConstraints(ifstream &con, int nTaxa){
 					for(vector<Bipartition>::iterator bit=bip.begin();bit!=bip.end();bit++){
 						constraints.push_back(Constraint(&(*bit), &mask, pos));
 						conNum++;
-						}
+						}					
 					}
 				else{
 					for(vector<Bipartition>::iterator bit=bip.begin();bit!=bip.end();bit++){
@@ -2716,43 +2608,18 @@ void Tree::LoadConstraints(ifstream &con, int nTaxa){
 		}while(con.eof() == false);
 
 	//make sure the constraints are compatible with each other!
-	bool allBackbone = true;
-	bool anyBackbone = false;
-	bool sameMask = true;
-	for(vector<Constraint>::iterator first=constraints.begin();first!=constraints.end();first++){
-		if(first->IsBackbone() == false){
-			allBackbone = false;
-			sameMask = false;
+	if(conNum > 1){
+		for(vector<Constraint>::iterator first=constraints.begin();first!=constraints.end();first++){
+			for(vector<Constraint>::iterator sec=first+1;sec!=constraints.end();sec++){
+				if((*first).IsPositive() != (*sec).IsPositive()) throw ErrorException("cannot mix positive and negative constraints!");
+				if(((*first).IsPositive()==false) && ((*sec).IsPositive()==false)) throw ErrorException("Sorry, GARLI can currently only handle a single negatively (conversely) constrainted branch :-(");
+				if((*first).ConstraintIsCompatibleWithConstraint((*sec)) == false) throw ErrorException("constraints are not compatible with one another!");
 			}
-		else 
-			anyBackbone = true;
-		for(vector<Constraint>::iterator sec=first+1;sec!=constraints.end();sec++){
-			if((*first).IsPositive() != (*sec).IsPositive()) 
-				throw ErrorException("cannot mix positive and negative constraints!");
-			if(((*first).IsPositive()==false) && ((*sec).IsPositive()==false)) 
-				throw ErrorException("Sorry, GARLI can currently only handle a single negatively (conversely) constrainted branch :-(");
-			if((*first).ConstraintIsCompatibleWithConstraint((*sec)) == false) 
-				throw ErrorException("constraints are not compatible with one another!");
-			if(allBackbone && sameMask && first->IsBackbone() && sec->IsBackbone() && first == constraints.begin()){
-				if(first->GetBackboneMask()->EqualsEquals(*sec->GetBackboneMask()) == false)
-					sameMask = false;
-				}
 			}
 		}
-	Constraint::SetConstraintStatics(allBackbone, anyBackbone, sameMask);
 	//summarize the constraint info to the screen
 	string str;
 	int num=1;
-
-	if(allBackbone){
-		outman.UserMessage("All constraints are backbone");
-		if(sameMask)
-			outman.UserMessage("All constraints involve the same backbone set of taxa");
-		else 
-			outman.UserMessage("Constraints involve differing sets of taxa");
-		}
-	else if(anyBackbone)
-		outman.UserMessage("Some constraints are backbone");
 	if(constraints[0].IsPositive()){
 		outman.UserMessage("Found %d positively constrained bipartition(s)", constraints.size());
 		for(vector<Constraint>::iterator first=constraints.begin();first!=constraints.end();first++){
@@ -2770,7 +2637,7 @@ void Tree::LoadConstraints(ifstream &con, int nTaxa){
 		}
 	}
 
-//this just "fakes" the swapping of the subtree rooted at cut to a postition as the sister of broken by adjusting the
+//this just "fakes" the swapping of the subtree rooted at cut to a postition as the sister of broken by adjusting the 
 //biparts across the tree.  This should only be used for NORMAL SPR's not subtree reorient SPR's
 void Tree::AdjustBipartsForSwap(int cut, int broken){
 	//first be sure the biparts are current
@@ -2794,21 +2661,18 @@ bool Tree::SwapAllowedByConstraint(const Constraint &constr, TreeNode *cut, Reco
 		/*(check for meaningful intersection of constraint and partial/backbone mask here)*/
 		Bipartition jointMask;
 		bool meaningfulIntersection = jointMask.MakeJointMask(constr, partialMask);
-		if(!meaningfulIntersection) 
-			return true;
+		if(!meaningfulIntersection) return true;
 
 		if(!broken->withinCutSubtree){
-			//if this is a normal SPR swap in which the cut subtree has the same orientation after the swap then we can
+			//if this is a normal SPR swap in which the cut subtree has the same orientation after the swap then we can 
 			//check the bipartition about to be created, and if that passes then adjust the bipartitions across the tree and
 			//recursively check the rest of the tree
 			compat = constr.BipartitionIsCompatibleWithConstraint(proposed, &jointMask);
 			if(compat == false) return compat;
 
-			//6/23/09 This call was moved up one level, so that it MUST called in AddRandomNodeWithConstraints or GatherValidReconnectionNodes
-			//before calling SwapAllowedByConstraint.  This saves a lot of work when looping over many constraints for a single swap
-			//that really only requires a single adjustment
-			//AdjustBipartsForSwap(cut->nodeNum, broken->nodeNum);
-
+			//this screws up the biparitions, so they need to be recalculated before returning
+			AdjustBipartsForSwap(cut->nodeNum, broken->nodeNum);
+			
 			compat = RecursiveAllowedByConstraintWithMask(constr, &jointMask, root);
 			}
 		else{
@@ -2885,7 +2749,7 @@ bool Tree::TaxonAdditionAllowedByNegativeBackboneConstraintWithMask(Constraint *
 //This can be called with the root, and it then recurces through the tree until it finds a bipartition that conflicts
 //with the constraint.  Unlike the ContainsBipartition functions, it doesn't actually require that the actual tree
 //to be checked has been made (i.e. that the swap has been done) - just that the bipartitions have been altered
-//as if it had.  It therefore has lower overhead when checking swaps and should be preferred.  The mask passed in should only be
+//as if it had.  It therefore has lower overhead when checking swaps and should be preferred.  The mask passed in should only be 
 //should include any backbone constraint and/or a mask containing those taxa present in a growing tree
 bool Tree::RecursiveAllowedByConstraintWithMask(const Constraint &constr, const Bipartition *jointMask, const TreeNode *nd){
 	bool compat = true;
@@ -2907,7 +2771,7 @@ bool Tree::RecursiveAllowedByConstraintWithMask(const Constraint &constr, const 
 	}
 
 //DJZ 8-11-04  This version is only for the master doing SPRs on nodes that aren't in a subtree when subtree
-//mode is on.  Basically the only difference is that if the ancestor of the cut node is the root, we need to
+//mode is on.  Basically the only difference is that if the ancestor of the cut node is the root, we need to 
 //choose one of the other nonSubtree nodes to make a connector to avoid screwing up the subtree partitioning
 void Tree::SPRMutate(int cutnum, int broknum, FLOAT_TYPE optPrecision, const vector<int> &nonSubNodes)
 {	assert( numBranchesAdded > 3 );
@@ -2941,7 +2805,7 @@ void Tree::SPRMutate(int cutnum, int broknum, FLOAT_TYPE optPrecision, const vec
 		if(!foundAConn)
 			return;//oops by chance we picked a trivial branch to cut, so it goes (if you want to call SPRMutate again that would make sure the tree always changes topo
 		}
-
+	
 	SweepDirtynessOverTree(cut);
 	TreeNode *replaceForConn;
 	if(cut->anc->anc){
@@ -2958,7 +2822,7 @@ void Tree::SPRMutate(int cutnum, int broknum, FLOAT_TYPE optPrecision, const vec
 	else{//cut is connected to the root so we need to steal a non terminal sib node as the connector
 		//this makes the root totally dirty
 		MakeNodeDirty(root);
-
+		
 		//Disconnect cut from the root
 		if(cut==root->left){
 			root->left=cut->next;
@@ -2985,12 +2849,12 @@ void Tree::SPRMutate(int cutnum, int broknum, FLOAT_TYPE optPrecision, const vec
 		root->AddDes(connector->right);
 		MakeNodeDirty(connector);
 		}
-
+		
 	//establish correct topology for connector and cut nodes
 	cut->anc=connector;
 	connector->left=connector->right=cut;
 	connector->next=connector->prev=connector->anc=cut->next=cut->prev=NULL;
-
+		
 	TreeNode *broken=allNodes[broknum];
 
 	broken->SubstituteNodeWithRespectToAnc(connector);
@@ -3004,7 +2868,7 @@ void Tree::SPRMutate(int cutnum, int broknum, FLOAT_TYPE optPrecision, const vec
 
 	SweepDirtynessOverTree(connector, cut);
 	MakeNodeDirty(connector);
-
+	
 #ifdef OPT_DEBUG
 	opt << "SPR\n";
 #endif
@@ -3050,8 +2914,8 @@ void Tree::MimicTopo(const Tree *source){
 //copys the cla indeces too
 void Tree::MimicTopo(TreeNode *nd, bool firstNode, bool sameModel){
 	//firstNode will be true if this is the base of the subtree to be copied.
-	//if it is true, the anc, next and prev should not be copied for that node
-	//Above the firstNode, nodes will be assumed to be the same nodenum in both trees.  This
+	//if it is true, the anc, next and prev should not be copied for that node 
+	//Above the firstNode, nodes will be assumed to be the same nodenum in both trees.  This 
 	//allows replicating nodeNums from a certain subtree up, but not in the rest of the tree
 	//The cla info will only be copied if the models are identical for the individuals (sameModel==true)
 	//otherwise the replicated nodes will be marked as dirty
@@ -3070,12 +2934,12 @@ void Tree::MimicTopo(TreeNode *nd, bool firstNode, bool sameModel){
 			mnd->next=allNodes[nd->next->nodeNum];
 				MimicTopo(nd->next, false, sameModel);
 			}
-		else
+		else 
 			mnd->next=NULL;
 		if(nd->prev){
 			mnd->prev=allNodes[nd->prev->nodeNum];
 			}
-		else
+		else 
 			mnd->prev=NULL;
 		}
 	//this should apply to all nodes
@@ -3087,7 +2951,7 @@ void Tree::MimicTopo(TreeNode *nd, bool firstNode, bool sameModel){
 	else
 		mnd->right=mnd->left=NULL;;
 
-	//the clas are now taken care of back where this was called
+	//the clas are now taken care of back where this was called	
 /*	if(nd->left){
 		if(sameModel==true)
 			mnd->CopyOneClaIndex(nd, claMan, DOWN);
@@ -3108,43 +2972,45 @@ void Tree::CopyClaIndecesInSubtree(const TreeNode *from, bool remove){
 	if(remove) claMan->DecrementCla(allNodes[from->nodeNum]->claIndexDown);
 	allNodes[from->nodeNum]->claIndexDown=from->claIndexDown;
 	if(allNodes[from->nodeNum]->claIndexDown != -1) claMan->IncrementCla(allNodes[from->nodeNum]->claIndexDown);
-
+	
 	//do the clas up left
 	if(remove) claMan->DecrementCla(allNodes[from->nodeNum]->claIndexUL);
 	allNodes[from->nodeNum]->claIndexUL=from->claIndexUL;
 	if(allNodes[from->nodeNum]->claIndexUL != -1) claMan->IncrementCla(allNodes[from->nodeNum]->claIndexUL);
-
+	
 	//do the clas up right
 	if(remove) claMan->DecrementCla(allNodes[from->nodeNum]->claIndexUR);
 	allNodes[from->nodeNum]->claIndexUR=from->claIndexUR;
 	if(allNodes[from->nodeNum]->claIndexUR != -1) claMan->IncrementCla(allNodes[from->nodeNum]->claIndexUR);
-
+	
 	if(from->left->IsInternal()) CopyClaIndecesInSubtree(from->left, remove);
 	if(from->right->IsInternal()) CopyClaIndecesInSubtree(from->right, remove);
 	}
 
 void Tree::DirtyNodesInSubtree(TreeNode *nd){
-
+	
 	MakeNodeDirty(nd);
 	if(nd->left->IsInternal()) DirtyNodesInSubtree(nd->left);
 	if(nd->right->IsInternal()) DirtyNodesInSubtree(nd->right);
-
+	
 	}
 
-void Tree::RescaleRateHet(CondLikeArray *destCLA){
+void Tree::RescaleRateHet(CondLikeArray *destCLA, int dataIndex){
+
+		SequenceData *curData = dataPart->GetSubset(dataIndex);
 
 		FLOAT_TYPE *destination=destCLA->arr;
 		int *underflow_mult=destCLA->underflow_mult;
-		const int *c=data->GetCounts();
-		const int nsites = data->NChar();
-		const int nRateCats = mod->NRateCats();
+		const int *c= curData->GetCounts();
+		const int nsites = destCLA->NChar();
+		const int nRateCats = destCLA->NRateCats();
 
 		//check if any clas are getting close to underflow
 #ifdef UNIX
 		madvise(destination, sizeof(FLOAT_TYPE)*4*nRateCats*nsites, MADV_SEQUENTIAL);
 		madvise(underflow_mult, sizeof(int)*nsites, MADV_SEQUENTIAL);
 #endif
-		FLOAT_TYPE large1 = 0.0, large2 = 0.0;
+		FLOAT_TYPE large1, large2;
 		for(int i=0;i<nsites;i++){
 #ifdef USE_COUNTS_IN_BOOT
 			if(c[i] > 0){
@@ -3153,7 +3019,7 @@ void Tree::RescaleRateHet(CondLikeArray *destCLA){
 #endif
 //for some reason optimzation in gcc 2.95 breaks the more optimal version of this code
 //this version is safer
-#if defined(__GNUC__) && __GNUC__ < 3
+#if defined(__GNUC__) && __GNUC__ < 3 
 				small1 = FLT_MAX;
 				large1 = FLT_MIN;
 				for(int r=0;r<nRateCats;r++){
@@ -3188,9 +3054,9 @@ void Tree::RescaleRateHet(CondLikeArray *destCLA){
 
 				for(int r=1;r<nRateCats;r++){
 					large2= (destination[0 + r*4] > destination[2 + r*4] ? destination[0 + r*4] : destination[2 + r*4]);
-					large1= (large1 > large2 ? large1 : large2);
+					large1= (large1 > large2 ? large1 : large2);				
 					large2= (destination[1 + r*4] > destination[3 + r*4] ? destination[1 + r*4] : destination[3 + r*4]);
-					large1= (large1 > large2 ? large1 : large2);
+					large1= (large1 > large2 ? large1 : large2);	
 					}
 	#endif
 #endif
@@ -3220,11 +3086,11 @@ void Tree::RescaleRateHet(CondLikeArray *destCLA){
 					}
 #else	//double precison
 				if(large1< rescaleBelow){
-					if(large1 < 1e-190){
+					if(large1 < 1e-150){
 						throw(1);
 						}
 					int index = 0;
-					while(((index + 1) < RESCALE_ARRAY_LENGTH) && (Tree::rescalePrecalcThresh[index + 1] > large1)){
+					while(((index + 1) < 30) && (Tree::rescalePrecalcThresh[index + 1] > large1)){
 						index++;
 						}
 					int incr = Tree::rescalePrecalcIncr[index];
@@ -3232,8 +3098,11 @@ void Tree::RescaleRateHet(CondLikeArray *destCLA){
 					FLOAT_TYPE mult=Tree::rescalePrecalcMult[index];
 					assert(large1 * mult < 1.0);
 					assert(large1 * mult > 0.0008);
-
-					for(int r=0;r<nRateCats;r++){
+		
+		/*			int incr=((int) -log(large1))+2;
+					underflow_mult[i]+=incr;
+					FLOAT_TYPE mult=exp((FLOAT_TYPE)incr);
+		*/			for(int r=0;r<nRateCats;r++){
 						for(int q=0;q<4;q++){
 							destination[r*4 + q]*=mult;
 							assert(destination[r*4 +q] == destination[r*4 +q]);
@@ -3261,22 +3130,23 @@ void Tree::RescaleRateHet(CondLikeArray *destCLA){
 		destCLA->rescaleRank=0;
 		}
 
-void Tree::RescaleRateHetNState(CondLikeArray *destCLA){
+void Tree::RescaleRateHetNState(CondLikeArray *destCLA, int dataIndex){
+	SequenceData *curData = dataPart->GetSubset(dataIndex);
 
 	FLOAT_TYPE *destination=destCLA->arr;
 	int *underflow_mult=destCLA->underflow_mult;
 
-	const int nsites = data->NChar();
-	const int nstates = mod->NStates();
-	const int nRateCats = mod->NRateCats();
-	const int *c = data->GetCounts();
+	const int nsites = destCLA->NChar();
+	const int nstates = destCLA->NStates();
+	const int nRateCats = destCLA->NRateCats();
+	const int *c = curData->GetCounts();
 
 	//check if any clas are getting close to underflow
 #ifdef UNIX
 	madvise(destination, sizeof(FLOAT_TYPE)*nstates*nRateCats*nsites, MADV_SEQUENTIAL);
 	madvise(underflow_mult, sizeof(int)*nsites, MADV_SEQUENTIAL);
 #endif
-	FLOAT_TYPE large1 = 0.0;
+	FLOAT_TYPE large1;
 	for(int i=0;i<nsites;i++){
 #ifdef USE_COUNTS_IN_BOOT
 		if(c[i] > 0){
@@ -3301,9 +3171,8 @@ void Tree::RescaleRateHetNState(CondLikeArray *destCLA){
 					large1 = destination[j];
 					}
 				}
-			assert(largest_abs > 0);
 #else
-
+			
 			large1 = (destination[0] > destination[1]) ? destination[0] :  destination[1];
 			for(int s=2;s<nstates*nRateCats;s++){
 				large1 = (destination[s] > large1) ? destination[s] : large1;
@@ -3318,15 +3187,13 @@ void Tree::RescaleRateHetNState(CondLikeArray *destCLA){
 					throw(1);
 					}
 				int index=0;
-
 				while(((index + 1) < 30) && (Tree::rescalePrecalcThresh[index + 1] > large1)){
 					index++;
 					}
-
 				int incr = Tree::rescalePrecalcIncr[index];
 				underflow_mult[i]+=incr;
 				FLOAT_TYPE mult= Tree::rescalePrecalcMult[index];
-				assert(large1 * mult < 10.0f);
+				assert(large1 * mult < 1.0f);
 				assert(large1 * mult > 0.01f);
 				for(int q=0;q<nstates*nRateCats;q++){
 					destination[q]*=mult;
@@ -3336,24 +3203,27 @@ void Tree::RescaleRateHetNState(CondLikeArray *destCLA){
 #else
 			assert(large1 < 1.0e15);
 			if(large1< rescaleBelow){
-				if(large1 < 1e-190){
+				if(large1 < 1e-150){
 					throw(1);
 					}
 				int index = 0;
-				while(((index + 1) < RESCALE_ARRAY_LENGTH) && (Tree::rescalePrecalcThresh[index + 1] > large1)){
+				while(((index + 1) < 30) && (Tree::rescalePrecalcThresh[index + 1] > large1)){
 					index++;
 					}
-
 				int incr = Tree::rescalePrecalcIncr[index];
 				underflow_mult[i]+=incr;
 				FLOAT_TYPE mult=Tree::rescalePrecalcMult[index];
 				assert(large1 * mult < 1.0);
-				assert(large1 * mult > 0.0008);
-
+				assert(large1 * mult > 0.0008);						
+/*					
+				int incr=((int) -log(large1))+2;
+				underflow_mult[i]+=incr;
+				FLOAT_TYPE mult=exp((FLOAT_TYPE)incr);
+*/
 				for(int q=0;q<nstates*nRateCats;q++){
 					destination[q]*=mult;
 					assert(destination[q] == destination[q]);
-					assert(destination[q] < 1.0e5);
+					assert(destination[q] < 1.0e50);
 					}
 				}
 #endif
@@ -3375,7 +3245,7 @@ void Tree::RescaleRateHetNState(CondLikeArray *destCLA){
 	destCLA->rescaleRank=0;
 	}
 
-int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnUnscaledSitePosteriors /*=false*/){
+int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool fillFinalCLA /*=false*/){
 	//note that fillFinalCLA just refers to whether we actually want to calc a CLA
 	//representing the contribution of the entire tree vs just calcing the score
 	//The only reason I can think of for doing that is to calc internal state probs
@@ -3384,34 +3254,34 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 	assert(this != NULL);
 	calcCount++;
 
-	CondLikeArray *destCLA=NULL;
+	CondLikeArraySet *destCLA=NULL;
 
 	TreeNode* Lchild, *Rchild;
-	CondLikeArray *LCLA=NULL, *RCLA=NULL, *partialCLA=NULL;
+	CondLikeArraySet *LCLA=NULL, *RCLA=NULL, *partialCLA=NULL;
 
-	FLOAT_TYPE *Rprmat = NULL, *Lprmat = NULL;
+	//FLOAT_TYPE *Rprmat = NULL, *Lprmat = NULL;
 	FLOAT_TYPE blen1, blen2;
 
 	if(direction != ROOT){
 		//the only complicated thing here will be to set up the two children depending on the direction
-		//get all of the clas, underflow mults and pmat set up here, then the actual calc loops below
+		//get all of the clas, underflow mults and pmat set up here, then the actual calc loops below 
 		//won't depend on direction
 		if(direction==DOWN){
 			Lchild=nd->left;
 			Rchild=nd->right;
-
+			
 			if(Lchild->IsInternal())
 				LCLA=GetClaDown(Lchild);
 			if(Rchild->IsInternal())
 				RCLA=GetClaDown(Rchild);
-
+			
 			blen1 = Lchild->dlen;
 			blen2 = Rchild->dlen;
 			}
 		else if(direction==UPRIGHT || direction==UPLEFT){
 			if(nd->anc){
 				Lchild=nd->anc;
-
+						
 				if(nd->anc->left==nd)
 					LCLA=GetClaUpLeft(Lchild);
 
@@ -3423,7 +3293,7 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 					LCLA=GetClaDown(Lchild);
 
 				blen1 = nd->dlen;
-
+			
 				if(direction==UPRIGHT) Rchild=nd->left;
 				else Rchild=nd->right;
 				}
@@ -3441,19 +3311,22 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 
 				blen1 = Lchild->dlen;
 				}
-
+			
 			if(Rchild->IsInternal())
 				RCLA=GetClaDown(Rchild);
-
+			
 			blen2 = Rchild->dlen;
 			}
 
-		mod->CalcPmats(blen1, blen2, Lprmat, Rprmat);
+	//	mod->CalcPmats(blen1, blen2, Lprmat, Rprmat);
 
 		if(direction==DOWN) destCLA=GetClaDown(nd, false);
 		else if(direction==UPRIGHT) destCLA=GetClaUpRight(nd, false);
 		else if(direction==UPLEFT) destCLA=GetClaUpLeft(nd, false);
 
+		UpdateCLAs(destCLA, LCLA, RCLA, Lchild, Rchild, blen1, blen2);
+
+	/*
 		if(LCLA!=NULL && RCLA!=NULL){
 			//two internal children
 			ProfIntInt.Start();
@@ -3461,7 +3334,7 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 			if(direction==DOWN){
 				CalcFullCLAInternalInternalEQUIV(destCLA, LCLA, RCLA, &Lprmat[0], &Rprmat[0], nsites,  mod->NRateCats(), nd->left->tipData, nd->right->tipData);
 				}
-			else
+			else 
 #endif
 			if(modSpec.IsNucleotide() == false)
 				CalcFullCLAInternalInternalNState(destCLA, LCLA, RCLA, &Lprmat[0], &Rprmat[0]);
@@ -3487,7 +3360,7 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 			if(modSpec.IsNucleotide() == false){
 				if(LCLA==NULL)
 					CalcFullCLAInternalTerminalNState(destCLA, RCLA, &Rprmat[0], &Lprmat[0], Lchild->tipData);
-				else
+				else 
 					CalcFullCLAInternalTerminalNState(destCLA, LCLA, &Lprmat[0], &Rprmat[0], Rchild->tipData);
 				}
 			else{
@@ -3500,22 +3373,23 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 #else
 				if(LCLA==NULL)
 					CalcFullCLAInternalTerminal(destCLA, RCLA, &Rprmat[0], &Lprmat[0], Lchild->tipData, NULL);
-				else
+				else 
 					CalcFullCLAInternalTerminal(destCLA, LCLA, &Lprmat[0], &Rprmat[0], Rchild->tipData, NULL);
 				}
 #endif
 			ProfIntTerm.Stop();
 			}
+*/
 		}
-
+	
 	if(direction==ROOT){
 		//at the root we need to include the contributions of 3 branches.  Check if we have a
 		//valid CLA that already represents two of these three. If so we can save a bit of
-		//computation.  This will mainly be the case during blen optimization, when when we
+		//computation.  This will mainly be the case during blen optimization, when when we 
 		//only change one of the branches again and again.
 		TreeNode *child;
-		CondLikeArray *childCLA=NULL;
-
+		CondLikeArraySet *childCLA=NULL;
+		
 		if(claMan->IsDirty(nd->claIndexUL) == false){
 			partialCLA=GetClaUpLeft(nd, false);
 			child=nd->left;
@@ -3532,7 +3406,7 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 				}
 			blen1 = child->dlen;
 			}
-		else{//both of the UP clas must be dirty.  We'll use the down one as the
+		else{//both of the UP clas must be dirty.  We'll use the down one as the 
 			//partial, and calc it now if necessary
 			if(claMan->IsDirty(nd->claIndexDown) == true)
 				partialCLA=GetClaDown(nd, true);
@@ -3540,14 +3414,14 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 			if(nd->anc!=NULL){
 				child=nd->anc;
 				if(child->left==nd){
-					childCLA=GetClaUpLeft(child, true);
+					childCLA=GetClaUpLeft(child, true);							
 					}
 				else if(child->right==nd){
 					childCLA=GetClaUpRight(child, true);
 					}
 				else{
 					//the node down that we want to get must be the root, and this
-					//node must be it's middle des.  Remember that the cla for that
+					//node must be it's middle des.  Remember that the cla for that 
 					//direction is stored as the root DOWN direction
 					childCLA=GetClaDown(child);
 					}
@@ -3560,19 +3434,24 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 					}
 				blen1 = child->dlen;
 				}
-			}
+			}	
+
+		//PARTITION
+		//GetScore here
+		GetTotalScore(partialCLA, childCLA, child, blen1);
+/*
 		mod->CalcPmats(blen1, -1.0, Lprmat, Rprmat);
 
-		if(returnUnscaledSitePosteriors == false){
+		if(fillFinalCLA==false){
 			if(childCLA!=NULL){//if child is internal
 				ProfScoreInt.Start();
 				if(modSpec.IsNucleotide())
 					lnL = GetScorePartialInternalRateHet(partialCLA, childCLA, &Lprmat[0]);
 				else
 					lnL = GetScorePartialInternalNState(partialCLA, childCLA, &Lprmat[0]);
-
+					
 				ProfScoreInt.Stop();
-				}
+				}	
 			else{
 				ProfScoreTerm.Start();
 				if(modSpec.IsNucleotide())
@@ -3583,25 +3462,23 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 				ProfScoreTerm.Stop();
 				}
 			}
-
+		
 		else{
 			//this is only for inferring internal states
-			//careful!  The cla will have to be returned manually by the caller
+			//careful!  This will have to be returned manually!!
 			int wholeTreeIndex=claMan->AssignClaHolder();
 			claMan->FillHolder(wholeTreeIndex, ROOT);
 			claMan->ReserveCla(wholeTreeIndex);
-			//note that the NState functions are used here for both nuc and other datatypes
-			if(childCLA!=NULL){//if child is internal
-				GetStatewiseUnscaledPosteriorsPartialInternalNState(claMan->GetCla(wholeTreeIndex), partialCLA, childCLA, &Lprmat[0]);
-				}
-			else{
-				GetStatewiseUnscaledPosteriorsPartialTerminalNState(claMan->GetCla(wholeTreeIndex), partialCLA, &Lprmat[0], child->tipData);
-				}
-
+			if(childCLA!=NULL)//if child is internal
+				CalcFullCLAPartialInternalRateHet(claMan->GetCla(wholeTreeIndex), childCLA, &Lprmat[0], partialCLA);
+			else
+				CalcFullCLAPartialTerminalRateHet(claMan->GetCla(wholeTreeIndex), partialCLA, &Lprmat[0], child->tipData);
+				
 			return wholeTreeIndex;
 			}
+*/
 		}
-
+/*
 	if(direction != ROOT){
 		if(destCLA->rescaleRank >= rescaleEvery){
 			ProfRescale.Start();
@@ -3613,7 +3490,142 @@ int Tree::ConditionalLikelihoodRateHet(int direction, TreeNode* nd, bool returnU
 			ProfRescale.Stop();
 			}
 		}
+*/
 	return -1;
+	}
+
+void Tree::GetTotalScore(CondLikeArraySet *partialCLAset, CondLikeArraySet *childCLAset, TreeNode *child, FLOAT_TYPE blen1){
+
+	FLOAT_TYPE *Rprmat = NULL, *Lprmat = NULL;
+	CondLikeArray *partialCLA=NULL, *childCLA=NULL;
+	FLOAT_TYPE modlnL;
+	lnL = ZERO_POINT_ZERO;
+
+	//NOTE: for sitelike output the caller should already have set the sitelike mode on the tree and prepared
+	//the sitelike output file (ofprefix + ".sitelikes.log"), adding a header or clearing it out first.  The sitelike
+	//level should generally be negative when partitioned so that each subset appends on to the file.  See how
+	//this is done in PerformSearch.  This function IS responsible for resetting the sitelike level and turning off
+	//sitelike output for future scorings.
+
+	for(vector<ClaSpecifier>::iterator specs = claSpecs.begin();specs != claSpecs.end();specs++){
+		Model *mod = modPart->GetModel((*specs).modelIndex);
+		mod->CalcPmats(blen1 * modPart->SubsetRate((*specs).dataIndex), -1.0, Lprmat, Rprmat);
+
+		partialCLA = partialCLAset->GetCLA((*specs).claIndex);
+
+		bool isNucleotide = mod->IsNucleotide();
+		if(childCLAset != NULL)
+			childCLA = childCLAset->GetCLA((*specs).claIndex);
+
+		if(childCLA!=NULL){//if child is internal
+			ProfScoreInt.Start();
+			if(isNucleotide)
+				modlnL = GetScorePartialInternalRateHet(partialCLA, childCLA, &Lprmat[0], (*specs).modelIndex, (*specs).dataIndex);
+			else
+				modlnL = GetScorePartialInternalNState(partialCLA, childCLA, &Lprmat[0], (*specs).modelIndex, (*specs).dataIndex);
+				
+			ProfScoreInt.Stop();
+			}	
+		else{
+			ProfScoreTerm.Start();
+			if(isNucleotide)
+				modlnL = GetScorePartialTerminalRateHet(partialCLA, &Lprmat[0], child->tipData[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+			else
+				modlnL = GetScorePartialTerminalNState(partialCLA, &Lprmat[0], child->tipData[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+
+			ProfScoreTerm.Stop();
+			}
+		lnL += modlnL;
+		}
+	//sitelike output is non-persistent, so clear it out here
+	sitelikeLevel = 0;
+	}
+
+void Tree::UpdateCLAs(CondLikeArraySet *destCLAset, CondLikeArraySet *firstCLAset, CondLikeArraySet *secCLAset, TreeNode *firstChild, TreeNode *secChild, FLOAT_TYPE blen1, FLOAT_TYPE blen2){
+
+	FLOAT_TYPE *Rprmat = NULL, *Lprmat = NULL;
+	CondLikeArray *destCLA=NULL, *firstCLA=NULL, *secCLA=NULL;
+
+	for(vector<ClaSpecifier>::iterator specs = claSpecs.begin();specs != claSpecs.end();specs++){
+		Model *mod = modPart->GetModel((*specs).modelIndex);
+		mod->CalcPmats(blen1 * modPart->SubsetRate((*specs).dataIndex), blen2 * modPart->SubsetRate((*specs).dataIndex), Lprmat, Rprmat);
+
+		destCLA = destCLAset->GetCLA((*specs).claIndex);
+
+		bool isNucleotide = mod->IsNucleotide();
+		if(firstCLAset != NULL)
+			firstCLA = firstCLAset->GetCLA((*specs).claIndex);
+		if(secCLAset != NULL)
+			secCLA = secCLAset->GetCLA((*specs).claIndex);
+
+		if(firstCLAset!=NULL && secCLAset!=NULL){
+			//two internal children
+			ProfIntInt.Start();
+
+			if(isNucleotide == false)
+				CalcFullCLAInternalInternalNState(destCLA, firstCLA, secCLA, &Lprmat[0], &Rprmat[0], (*specs).modelIndex, (*specs).dataIndex);
+			else
+				CalcFullCLAInternalInternal(destCLA, firstCLA, secCLA, &Lprmat[0], &Rprmat[0], (*specs).modelIndex, (*specs).dataIndex);
+			ProfIntInt.Stop();
+			}
+
+		else if(firstCLAset==NULL && secCLAset==NULL){
+			//two terminal children
+			ProfTermTerm.Start();
+			if(isNucleotide == false)
+				CalcFullCLATerminalTerminalNState(destCLA, &Lprmat[0], &Rprmat[0], firstChild->tipData[(*specs).dataIndex], secChild->tipData[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+			else
+				CalcFullCLATerminalTerminal(destCLA, &Lprmat[0], &Rprmat[0], firstChild->tipData[(*specs).dataIndex], secChild->tipData[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+			ProfTermTerm.Stop();
+			}
+
+		else{
+			//one terminal, one internal
+			ProfIntTerm.Start();
+
+			if(isNucleotide == false){
+				if(firstCLAset==NULL)
+					CalcFullCLAInternalTerminalNState(destCLA, secCLA, &Rprmat[0], &Lprmat[0], firstChild->tipData[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+				else 
+					CalcFullCLAInternalTerminalNState(destCLA, firstCLA, &Lprmat[0], &Rprmat[0], secChild->tipData[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+				}
+			else{
+	#ifdef OPEN_MP
+				if(firstCLA==NULL){
+					assert(firstChild->ambigMap.size() > (*specs).dataIndex);
+					assert(firstChild->ambigMap[(*specs).dataIndex] != NULL);					
+					}
+				else{
+					assert(secChild->ambigMap.size() > (*specs).dataIndex);
+					assert(secChild->ambigMap[(*specs).dataIndex] != NULL);	
+					}
+
+				if(firstCLA==NULL)
+					CalcFullCLAInternalTerminal(destCLA, secCLA, &Rprmat[0], &Lprmat[0], firstChild->tipData[(*specs).dataIndex], firstChild->ambigMap[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+					//CalcFullCLAInternalTerminal(destCLA, secCLA, &Rprmat[0], &Lprmat[0], firstChild->tipData, firstChild->ambigMap, (*specs).modelIndex, (*specs).dataIndex);
+				else
+					CalcFullCLAInternalTerminal(destCLA, firstCLA, &Lprmat[0], &Rprmat[0], secChild->tipData[(*specs).dataIndex], secChild->ambigMap[(*specs).dataIndex], (*specs).modelIndex, (*specs).dataIndex);
+					//CalcFullCLAInternalTerminal(destCLA, firstCLA, &Lprmat[0], &Rprmat[0], secChild->tipData, secChild->ambigMap, (*specs).modelIndex, (*specs).dataIndex);
+				}
+	#else
+				if(firstCLA==NULL)
+					CalcFullCLAInternalTerminal(destCLA, secCLA, &Rprmat[0], &Lprmat[0], firstChild->tipData[(*specs).dataIndex], NULL, (*specs).modelIndex, (*specs).dataIndex);
+				else 
+					CalcFullCLAInternalTerminal(destCLA, firstCLA, &Lprmat[0], &Rprmat[0], secChild->tipData[(*specs).dataIndex], NULL, (*specs).modelIndex, (*specs).dataIndex);
+				}
+	#endif
+			ProfIntTerm.Stop();
+			}
+		if(destCLA->rescaleRank >= rescaleEvery){
+			ProfRescale.Start();
+			if(isNucleotide)
+				RescaleRateHet(destCLA, (*specs).dataIndex);
+			else
+				RescaleRateHetNState(destCLA, (*specs).dataIndex);
+
+			ProfRescale.Stop();
+			}
+		}
 	}
 
 int Tree::Score(int rootNodeNum /*=0*/){
@@ -3647,7 +3659,7 @@ int Tree::Score(int rootNodeNum /*=0*/){
 				ofstream resc("rescale.log", ios::app);
 				resc << "rescale reduced to " << rescaleEvery << endl;
 				resc.close();
-				if(rescaleEvery<2) throw(ErrorException("Problem with rescaling during tree scoring.  Please report this error to garli.support.gmail.com."));
+				if(rescaleEvery<2) throw(ErrorException("Problem with rescaling during tree scoring.  Please report this error to zwickl@nescent.org."));
 				}
 		}while(scoreOK==false);
 
@@ -3704,13 +3716,13 @@ FLOAT_TYPE Tree::SubTreeScore( TreeNode *nd){
 				lnL += (  *countit * siteL);
 				countit++;
 				}
-			}
+			}		
 		}
 	else {
 		FLOAT_TYPE prI=mod->PropInvar();
 		int lastConst=data->LastConstant();
 		const int *conBases=data->GetConstBases();
-
+		
 		if(mod->NRateCats()==1){//invariants without gamma
 	for( int k = 0; k < nSites; k++ ){
 		assert(0);
@@ -3797,12 +3809,12 @@ FLOAT_TYPE Tree::SubTreeScoreRateHet( TreeNode *nd){
 void Tree::TraceDirtynessToRoot(TreeNode *nd){
 	SweepDirtynessOverTree(nd);
 
-/*
+/*	
 	while(nd){
 		if(nd->nodeNum==0 || nd->nodeNum>numTipsTotal) nd->claIndexDown=claMan->SetDirty(nd->claIndexDown, true);
 		nd=nd->anc;
 		}
-
+	
 */	}
 
 void Tree::SweepDirtynessOverTree(TreeNode *nd, TreeNode *from/*=NULL*/){
@@ -3822,7 +3834,7 @@ void Tree::SweepDirtynessOverTree(TreeNode *nd, TreeNode *from/*=NULL*/){
 			if(nd->left->IsInternal()) SweepDirtynessOverTree(nd->left, nd);
 			if(nd->right->IsInternal()) SweepDirtynessOverTree(nd->right, nd);
 			}
-		if(nd->anc!=NULL) SweepDirtynessOverTree(nd->anc, nd);
+		if(nd->anc!=NULL) SweepDirtynessOverTree(nd->anc, nd);	
 		}
 	else{
 	//if the change was below, invalidating clas above, also if the change
@@ -3837,14 +3849,14 @@ void Tree::SweepDirtynessOverTree(TreeNode *nd, TreeNode *from/*=NULL*/){
 			nd->claIndexUR=claMan->SetDirty(nd->claIndexUR);
 			nd->claIndexDown=claMan->SetDirty(nd->claIndexDown);
 			if(nd->right->IsInternal()) SweepDirtynessOverTree(nd->right, nd);
-			if(nd->anc!=NULL) SweepDirtynessOverTree(nd->anc, nd);
+			if(nd->anc!=NULL) SweepDirtynessOverTree(nd->anc, nd);		
 			else if(nd->left->next->IsInternal()) SweepDirtynessOverTree(nd->left->next, nd);
 			}
 		else if(from==nd->right){
 			nd->claIndexUL=claMan->SetDirty(nd->claIndexUL);
 			nd->claIndexDown=claMan->SetDirty(nd->claIndexDown);
 			if(nd->left->IsInternal()) SweepDirtynessOverTree(nd->left, nd);
-			if(nd->anc!=NULL) SweepDirtynessOverTree(nd->anc, nd);
+			if(nd->anc!=NULL) SweepDirtynessOverTree(nd->anc, nd);		
 			else if(nd->left->next->IsInternal()) SweepDirtynessOverTree(nd->left->next, nd);
 			}
 		}
@@ -3877,7 +3889,7 @@ void Tree::SortAllNodesArray(){
 	}
 
 void Tree::EliminateNode(int nn){
-	//DZ 10-30-02 this function will permenantly get rid of a node and correct all of the other nodeNums so that
+	//DZ 10-30-02 this function will permenantly get rid of a node and correct all of the other nodeNums so that 
 	//there isn't a hole in the middle.  I think this just needs to be called when an inital tree is made trifrcating
 	//at the root.  This isn't the prettiest thing, but I can't think of an obvious way to make a tree that has 3 des
 	//from the root in the first place
@@ -3896,8 +3908,8 @@ void Tree::EliminateNode(int nn){
 	allNodes=newNodes;
 	}
 
-//CAREFUL!  This is called from CheckBalance and assumes that this tree
-//does not share CLAs with any other.
+//CAREFUL!  This is called from CheckBalance and assumes that this tree 
+//does not share CLAs with any other.  
 void Tree::RotateNodesAtRoot(TreeNode *newroot){
 	//DZ 11-3-02 This can be used to rebalance the tree
 	//I'm assuming that this will be called with one of the des of the root;
@@ -3959,7 +3971,7 @@ void Tree::RotateNodesAtRoot(TreeNode *newroot){
 //	root->claIndexDown=claMan->SetDirty(root->claIndexDown);
 //	tempnode->claIndexDown=claMan->SetDirty(tempnode->claIndexDown);
 	}
-
+	
 //CAREFUL here!  This function assumes that this tree and ONLY this tree
 //points to a set of CLAs.  The indeces should all be valid on exit
 //but strange things may happen if other trees also point to them.
@@ -3988,7 +4000,7 @@ void Tree::CheckBalance(){
 		rb=rlb+rrb+2;
 		rs=rls+rrs+4;
 		}
-/*
+/*	
 	int dl=0, dm=0, dr=0;
 	root->left->CalcDepth(dl);
 	root->left->next->CalcDepth(dm);
@@ -3999,7 +4011,7 @@ void Tree::CheckBalance(){
 		int rotLeft=(lls-llb+lrs-lrb+2+ms+mb+rs+rb+5);
 		int rotMid=(mls-mlb+mrs-mrb+2+ls+lb+rs+rb+5);
 		int rotRight=(rls-rlb+rrs-rrb+2+ms+mb+ls+lb+5);
-
+		
 		if(cur<=rotLeft&&cur<=rotMid&&cur<=rotRight) return;
 		else if(rotLeft<rotMid&&rotLeft<rotRight){
 			RotateNodesAtRoot(root->left);
@@ -4015,7 +4027,7 @@ void Tree::CheckBalance(){
 			}
 
 		lb=mb=rb=ls=ms=rs=llb=lrb=mlb=mrb=rlb=rrb=lls=lrs=mls=mrs=rls=rrs=0;
-
+	
 		if(root->left->IsInternal()){
 			root->left->left->CountSubtreeBranchesAndDepth(llb, lls, 3, true);
 			root->left->right->CountSubtreeBranchesAndDepth(lrb, lrs, 3, true);
@@ -4034,10 +4046,10 @@ void Tree::CheckBalance(){
 			rb=rlb+rrb+2;
 			rs=rls+rrs+4;
 			}
-/*
+/*		
 		root->left->CalcDepth(dl);
 		root->left->next->CalcDepth(dm);
-		root->right->CalcDepth(dr);
+		root->right->CalcDepth(dr);		
 
 
 
@@ -4060,7 +4072,7 @@ void Tree::SwapAndFreeNodes(TreeNode *cop){
 		int temp=allNodes[unused]->nodeNum;
 		allNodes[unused]->nodeNum=allNodes[tofree]->nodeNum;
 		allNodes[tofree]->nodeNum=temp;
-
+		
 		MakeNodeDirty(allNodes[unused]);
 		MakeNodeDirty(allNodes[tofree]);
 		/*
@@ -4081,21 +4093,21 @@ void Tree::SwapAndFreeNodes(TreeNode *cop){
 		allNodes[unused]->attached=true;
 		allNodes[tofree]->attached=true;//actual its not attached, but we need to mark it as such so it isn't used as a connector
 		}
-	else//this is odd, but if a node will need to be used to
+	else//this is odd, but if a node will need to be used to 
 		//mimic nodenums in the subtree, but was already unattached,
 		//we need to mark it as attached so that it isn't used for
 		//some other purpose.
 		allNodes[tofree]->attached=true;
-
+			
 	if(cop->left->left) SwapAndFreeNodes(cop->left);
-	if(cop->right->left) SwapAndFreeNodes(cop->right);
+	if(cop->right->left) SwapAndFreeNodes(cop->right);	
 	}
 
 void Tree::CalcBipartitions(bool standardize){
 	if(!(bipartCond == CLEAN_STANDARDIZED && standardize == true) &&
 		!(bipartCond == CLEAN_UNSTANDARDIZED && standardize == false)){
 
-		if(bipartCond == CLEAN_UNSTANDARDIZED && standardize == true)
+		if(bipartCond == CLEAN_UNSTANDARDIZED && standardize == true) 
 			root->StandardizeBipartition();
 		else
 			root->CalcBipartition(standardize);
@@ -4104,7 +4116,7 @@ void Tree::CalcBipartitions(bool standardize){
 		}
 //	root->VerifyBipartition(standardize);
 	}
-
+	
 void Tree::OutputBipartitions(){
 	ofstream out("biparts.log", ios::app);
 	root->OutputBipartition(out);
@@ -4136,7 +4148,7 @@ void Tree::SetDistanceBasedBranchLengthsAroundNode(TreeNode *nd){
 	if(a < min_brlen) a=min_brlen;
 	c=D2-a;
 	if(c < min_brlen) c=min_brlen;
-
+	
 	nd->left->dlen=a;
 	nd->right->dlen=b;
 	nd->dlen=c;
@@ -4203,7 +4215,7 @@ void Tree::FindNearestTerminalsDown(TreeNode *start, TreeNode *from, TreeNode *&
 		}
 
 	sprRange.clear();
-	if(start->anc != NULL){
+	if(start->anc != NULL){		
 		sprRange.setseed(start->anc->nodeNum, start->dlen);
 		for(int i = 0;i<range;i++){
 	      int j =  sprRange.total;
@@ -4265,11 +4277,11 @@ void Tree::OptimizeBranchesAroundNode(TreeNode *nd, FLOAT_TYPE optPrecision, int
 /*	FLOAT_TYPE precision1, precision2;
 
 	if(subtreeNode==0) SetAllTempClasDirty();
-
+	
 	precision1=optPrecision;// * 0.5;
 	if(optPrecision > .2) precision2=0.0;
 	else precision2=precision1 * 0.5;
-
+	
 	if(nd != root){
 		BrentOptimizeBranchLength(precision1, nd, false);
 		BrentOptimizeBranchLength(precision1, nd->left, false);
@@ -4278,10 +4290,10 @@ void Tree::OptimizeBranchesAroundNode(TreeNode *nd, FLOAT_TYPE optPrecision, int
 	else{
 		BrentOptimizeBranchLength(precision1, nd->left, false);
 		BrentOptimizeBranchLength(precision1, nd->left->next, false);
-		BrentOptimizeBranchLength(precision1, nd->right, false);
+		BrentOptimizeBranchLength(precision1, nd->right, false);	
 		}
 */
-/*
+/*	
 	if(precision2 > 0){
 		//if were're doing multiple optimization passes, only this stuff needs to be set dirty
 		claMan->SetDirty(nd->nodeNum, nd->claIndex, true);
@@ -4296,10 +4308,10 @@ void Tree::OptimizeBranchesAroundNode(TreeNode *nd, FLOAT_TYPE optPrecision, int
 		else {
 			BrentOptimizeBranchLength(precision2, nd->left, false);
 			BrentOptimizeBranchLength(precision2, nd->left->next, false);
-			BrentOptimizeBranchLength(precision2, nd->right, false);
+			BrentOptimizeBranchLength(precision2, nd->right, false);			
 			}
 		}
-*/
+*/		
 /*	//these must be called after all optimization passes are done around this node
 	TraceDirtynessToRoot(nd);
 	if(subtreeNode==0)
@@ -4312,7 +4324,7 @@ void Tree::RerootHere(int newroot){
 	//so that they are still valid in the new context, rather than just dirtying everything
 	//DJZ 11/19/07 removing CLA adjustment code because it was buggy and didn't check the
 	//number of individuals that pointed to the same CLA, and so sometimes screwed things up.
-	//REMEMBER that the mutation_type of the individual this is called for needs to be
+	//REMEMBER that the mutation_type of the individual this is called for needs to be 
 	// "|= rerooted" so that the topo numbers are updated properly
 
 	TreeNode *nroot=allNodes[newroot];
@@ -4331,14 +4343,14 @@ void Tree::RerootHere(int newroot){
 	//this will be easiest recursively
 	nroot->FlipBlensToRoot(0);
 	SweepDirtynessOverTree(nroot);
-
+	
 	//now take the new root's current ancestor and make it the middle des
 	//note that the existing cla directions at this node are still valid
 	nroot->left->next=curnode;
 	curnode->next=nroot->right;
 	nroot->right->prev=curnode;
 	curnode->prev=nroot->left;
-
+	
 	//this needs to work slightly differently if the old root is the anc of the new one
 	if(curnode!=root){
 		if(prevnode==curnode->left){
@@ -4350,7 +4362,7 @@ void Tree::RerootHere(int newroot){
 			//curnode->AdjustClasForReroot(UPRIGHT);
 			}
 //		SweepDirtynessOverTree(curnode);
-
+		
 		curnode->left->next=curnode->right;
 		curnode->left->prev=NULL;
 		curnode->right->prev=curnode->left;
@@ -4360,10 +4372,10 @@ void Tree::RerootHere(int newroot){
 		curnode=nextnode;
 		nextnode=nextnode->anc;
 		}
-
+		
 	curnode->anc=prevnode;
 	nroot->anc=NULL;
-
+			
 	while(curnode!=root){
 		if(prevnode==curnode->left){
 			curnode->left=nextnode;
@@ -4374,19 +4386,19 @@ void Tree::RerootHere(int newroot){
 			//curnode->AdjustClasForReroot(UPRIGHT);
 			}
 //		SweepDirtynessOverTree(curnode);
-
+			
 		curnode->left->next=curnode->right;
 		curnode->left->prev=NULL;
 		curnode->right->prev=curnode->left;
 		curnode->right->next=NULL;
-
+				
 		curnode->anc=prevnode;
-
+		
 		prevnode=curnode;
 		curnode=nextnode;
 		nextnode=nextnode->anc;
 		}
-
+	
 	//now deal with the old root, which is now curnode
 	if(prevnode==curnode->left){
 		curnode->left=curnode->right->prev;
@@ -4400,16 +4412,16 @@ void Tree::RerootHere(int newroot){
 		}
 	else{
 		curnode->right=curnode->left->next;
-		curnode->right->next=NULL;
+		curnode->right->next=NULL;		
 		//curnode->AdjustClasForReroot(UPRIGHT);
 		}
 	MakeNodeDirty(curnode);
-
+		
 	curnode->anc=prevnode;
-
+	
 	//now we just need to make the newroot node0 and swap it with the old root, which means moving the
 	//_data_ to node 0, not just swapping the memory addresses
-
+	
 	SwapNodeDataForReroot(nroot);
 
 	root->CheckTreeFormation();
@@ -4428,18 +4440,18 @@ void Tree::SwapNodeDataForReroot(TreeNode *nroot){
 	if(root->anc==nroot) tempold.anc=root;
 	else tempold.anc=root->anc;
 	tempold.dlen=root->dlen;
-
+	
 	tempold.claIndexDown=root->claIndexDown;
 	tempold.claIndexUL=root->claIndexUL;
 	tempold.claIndexUR=root->claIndexUR;
-
+	
 	TreeNode tempnew;
 	tempnew.left=nroot->left;
 	tempnew.right=nroot->right;
 	tempnew.next=nroot->next;
 	tempnew.prev=nroot->prev;
 	tempnew.anc=nroot->anc;
-	tempnew.dlen=nroot->dlen;
+	tempnew.dlen=nroot->dlen;	
 	tempnew.claIndexDown=nroot->claIndexDown;
 	tempnew.claIndexUL=nroot->claIndexUL;
 	tempnew.claIndexUR=nroot->claIndexUR;
@@ -4457,7 +4469,7 @@ void Tree::SwapNodeDataForReroot(TreeNode *nroot){
 	root->claIndexUR=tempnew.claIndexUR;
 
 	MakeNodeDirty(root);
-
+	
 	nroot->left=tempold.left;
 	nroot->left->anc=nroot;
 	nroot->right=tempold.right;
@@ -4472,7 +4484,7 @@ void Tree::SwapNodeDataForReroot(TreeNode *nroot){
 	nroot->claIndexUR=tempold.claIndexUR;
 
 	MakeNodeDirty(nroot);
-
+	
 	if(nroot->anc->left==root){
 		nroot->anc->left=nroot;
 		nroot->prev=NULL;
@@ -4489,12 +4501,12 @@ void Tree::SwapNodeDataForReroot(TreeNode *nroot){
 		nroot->anc->left->next=nroot;
 //		nroot->next=NULL;
 		nroot->prev=nroot->anc->left;
-//		nroot->prev->next=nroot;
+//		nroot->prev->next=nroot;		
 		}
 	nroot->dlen=tempold.dlen;
 	}
 
-
+	
 void Tree::MakeNodeDirty(TreeNode *nd){
 	if(nd->claIndexDown != -1)
 		nd->claIndexDown=claMan->SetDirty(nd->claIndexDown);
@@ -4503,14 +4515,14 @@ void Tree::MakeNodeDirty(TreeNode *nd){
 	if(nd->claIndexUR != -1)
 		nd->claIndexUR=claMan->SetDirty(nd->claIndexUR);
 	}
-
+	
 void Tree::RemoveTempClaReservations(){
 	if(memLevel > 1){
 		for(int i=numTipsTotal+1;i<numNodesTotal;i++){
 			claMan->ClearTempReservation(allNodes[i]->claIndexDown);
 			}
 		}
-
+	
 	for(int i=numTipsTotal+1;i<numNodesTotal;i++){
 		claMan->ClearTempReservation(allNodes[i]->claIndexUR);
 		}
@@ -4534,15 +4546,15 @@ void Tree::ReclaimUniqueClas(){
 	}
 
 void Tree::MarkUpwardClasToReclaim(int subtreeNode){
-	//if we are somewhat low on clas, mark some reclaimable that were
+	//if we are somewhat low on clas, mark some reclaimable that were 
 	//used tracing the likelihood upward for blen optimization
 	assert(0);
 	if(subtreeNode==0){
 /*		if(memLevel==2){
 			if(allNodes[0]->claIndexUL > 0)
-				claMan->MarkReclaimable(allNodes[0]->claIndexUL, 2);
+				claMan->MarkReclaimable(allNodes[0]->claIndexUL, 2);			
 			if(allNodes[0]->claIndexUR > 0)
-				claMan->MarkReclaimable(allNodes[0]->claIndexUR, 2);
+				claMan->MarkReclaimable(allNodes[0]->claIndexUR, 2);		
 			}
 */		for(int i=numTipsTotal+1;i<numNodesTotal;i++){
 //			claMan->MarkReclaimable(allNodes[i]->claIndexUL, 2, false);
@@ -4611,6 +4623,8 @@ void Tree::MarkClasNearTipsToReclaim(int subtreeNode){
 		}
 	}
 
+//PARTITION
+/*
 void Tree::OutputNthClaAcrossTree(ofstream &deb, TreeNode *nd, int site){
 	//int site=0;
 	int nstates = mod->NStates();
@@ -4641,7 +4655,7 @@ void Tree::OutputNthClaAcrossTree(ofstream &deb, TreeNode *nd, int site){
 			}
 		deb <<"\n";
 		}
-
+*/
 	//this version only outputs clean clas
 /*	if(nd->IsInternal() && claMan->IsDirty(nd->claIndexDown) == false){
 		deb << nd->nodeNum << "\t0\t" << nd->claIndexDown << "\t";
@@ -4659,17 +4673,17 @@ void Tree::OutputNthClaAcrossTree(ofstream &deb, TreeNode *nd, int site){
 		deb << claMan->GetCla(nd->claIndexUR)->underflow_mult[site] <<"\n";
 		}
 */
-	if(nd->IsInternal())
+/*	if(nd->IsInternal())
 		OutputNthClaAcrossTree(deb, nd->left, site);
 	if(nd->next!=NULL)
 		OutputNthClaAcrossTree(deb, nd->next, site);
 	}
-
+*/
 void Tree::CountNumReservedClas(int &clean, int &tempRes, int&res){
 	clean=0;
 	tempRes=0;
 	res=0;
-
+	
 	if(claMan->IsDirty(allNodes[0]->claIndexDown)==false){
 		clean++;
 		res += (claMan->IsClaReserved(allNodes[0]->claIndexDown));
@@ -4706,19 +4720,19 @@ void Tree::CountNumReservedClas(int &clean, int &tempRes, int&res){
 
 void Tree::SetupClasForSubtreeMode(int subtreeNode){
 	TreeNode *subnode=allNodes[subtreeNode];
-
+	
 	claMan->ReserveCla(subnode->claIndexDown, false);
 	claMan->ReserveCla(subnode->claIndexUL, false);
 	claMan->ReserveCla(subnode->claIndexUR, false);
-
+	
 	if(subnode->anc != root){
 		if(subnode->anc->left==subnode) claMan->ReserveCla(subnode->anc->claIndexUL, false);
 		else if(subnode->anc->right==subnode) claMan->ReserveCla(subnode->anc->claIndexUR, false);
 		}
-
+	
 	DirtyNodesOutsideOfSubtree(root, subtreeNode);
 	}
-
+	
 void Tree::DirtyNodesOutsideOfSubtree(TreeNode *nd, int subtreeNode){
 
 	if(nd != root){
@@ -4726,7 +4740,7 @@ void Tree::DirtyNodesOutsideOfSubtree(TreeNode *nd, int subtreeNode){
 		claMan->ReclaimSingleCla(nd->claIndexUL);
 		claMan->ReclaimSingleCla(nd->claIndexUR);
 		}
-
+	
 	if(nd->left->IsInternal() && nd->left->nodeNum != subtreeNode && nd->left->nodeNum != allNodes[subtreeNode]->anc->nodeNum){
 		DirtyNodesOutsideOfSubtree(nd->left, subtreeNode);
 		}
@@ -4752,9 +4766,11 @@ void Tree::OutputValidClaIndeces(){
 void Tree::GetInternalStateString(char *string, int nodeNum){
 	assert(0);
 //	Score(nodeNum);
-//	InferStatesFromCla(string, claMan->GetTempCla()->arr, data->NChar());
+//	InferStatesFromCla(string, claMan->GetTempCla()->arr, data->NChar());	
 	}
 
+//PARTITION
+/*
 void Tree::InferAllInternalStateProbs(const char *ofprefix){
 	char filename[80];
 	sprintf(filename, "%s.internalstates.log", ofprefix);
@@ -4768,55 +4784,50 @@ void Tree::InferAllInternalStateProbs(const char *ofprefix){
 void Tree::RecursivelyCalculateInternalStateProbs(TreeNode *nd, ofstream &out){
 	if(nd->IsInternal()) RecursivelyCalculateInternalStateProbs(nd->left, out);
 	if(nd->next) RecursivelyCalculateInternalStateProbs(nd->next, out);
-
+	
 	if(nd->IsInternal()){
-		//what this now returns is really the unscaled posterior values for each state, marginalized across rates (including any invariant class).
-		//thus, the state frqeuencies have already been figured in and nothing needs to be done in InferStatesFromCla besides divide each by the sum
-		//note that this clas then only uses the first nstates x nchar portion, instead of the usual nstates x nchar x nrates
-		int wholeTreeIndex = ConditionalLikelihoodRateHet(ROOT, nd, true);
-		vector<InternalState> stateProbs;
-		InferStatesFromCla(stateProbs, claMan->GetCla(wholeTreeIndex)->arr, data->NChar(), mod->NStates());
+		int wholeTreeIndex=ConditionalLikelihoodRateHet(ROOT, nd, true);
+		vector<InternalState *> *stateProbs=InferStatesFromCla(claMan->GetCla(wholeTreeIndex)->arr, data->NChar(), mod->NRateCats());
 
-		//output newick strings with both names and numbers indicating which node this corresponds to
-		string subtreeString;
-		nd->MakeNewickForSubtree(subtreeString, data, false, false, false);	
-		out << "node " << nd->nodeNum << "\t" << subtreeString.c_str() << "\t";
-		subtreeString.clear();
-		nd->MakeNewickForSubtree(subtreeString, data, false, false, true);	
-		out << subtreeString.c_str() << endl;
-
-		//this just maps the indecies used in the clas to actual states
-		StateSet *states;
-		if(modSpec.IsNucleotide())
-			states = new StateSet(4);
-		else if(modSpec.IsAminoAcid())
-			states = new StateSet(20);
-		else
-			states = new StateSet(mod->GetGeneticCode());
-
-		states->OutputInternalStateHeader(out);
-
-		//now map the posteriors of each packed state to the original char order
+		char subtreeString[5000];
+		nd->MakeNewickForSubtree(subtreeString);		
+		out << "node " << nd->nodeNum << "\t" << subtreeString << "\t";
+		char *loc=subtreeString;
+		NxsString temp;
+		
+		while(*loc){
+			if(isdigit(*loc) == false) out << *loc++;
+			else{
+				while(isdigit(*loc))
+					temp += *loc++;
+				out << dataPart->TaxonLabel(atoi(temp.c_str())-1);
+				temp="";
+				}
+			}
+		out << "\n";
+		
 		for(int s=0;s<data->GapsIncludedNChar();s++){
 			out << s+1 << "\t";
 			if(data->Number(s) > -1)
-				stateProbs[data->Number(s)].Output(out, *states);
-			else 
-				out << "Entirely uninformative character (gaps,N's or ?'s)\n";
+				(*stateProbs)[data->Number(s)]->Output(out);
+			else out << "Entirely uninformative character (gaps,N's or ?'s)\n";
 			}
 		
-		//return the cla that we used temporarily
 		claMan->ClearTempReservation(wholeTreeIndex);
 		claMan->DecrementCla(wholeTreeIndex);
-		delete states;
+		
+		for(vector<InternalState*>::iterator delit=stateProbs->begin();delit!=stateProbs->end();delit++){
+			delete *(delit);
+			}
+		delete stateProbs;
 		}
 	}
-
+*/	
 void Tree::ClaReport(ofstream &cla){
 	int totDown=0;
 	int totUL=0;
 	int totUR=0;
-
+	
 	cla << "root\t" << claMan->GetReclaimLevel(root->claIndexDown) << "\t" << claMan->GetNumAssigned(root->claIndexDown)<< "\t" << claMan->GetClaNumber(root->claIndexDown);
 	cla << "\n\t" << claMan->GetReclaimLevel(root->claIndexUL) << "\t" << claMan->GetNumAssigned(root->claIndexUL) << "\t" << claMan->GetClaNumber(root->claIndexUL);
 	cla << "\n\t" << claMan->GetReclaimLevel(root->claIndexUR)  << "\t" << claMan->GetNumAssigned(root->claIndexUR)  << "\t" << claMan->GetClaNumber(root->claIndexUR) << "\n";
@@ -4833,42 +4844,42 @@ void Tree::ClaReport(ofstream &cla){
 	cla << "tots\t" << totDown << "\t" << totUL << "\t" << totUR << endl;
 //	cla.close();
 	}
-
+	
 FLOAT_TYPE Tree::CountClasInUse(){
 	FLOAT_TYPE inUse=0.0;
-
+	
 	if(claMan->IsDirty(root->claIndexDown) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(root->claIndexDown);
 	if(claMan->IsDirty(root->claIndexUL) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(root->claIndexUL);
 	if(claMan->IsDirty(root->claIndexUR) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(root->claIndexUR);
 	for(int i=numTipsTotal+1;i<numNodesTotal;i++){
-		TreeNode *n=allNodes[i];
+		TreeNode *n=allNodes[i];	
 		if(claMan->IsDirty(n->claIndexDown) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(n->claIndexDown);
 		if(claMan->IsDirty(n->claIndexUL) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(n->claIndexUL);
-		if(claMan->IsDirty(n->claIndexUR) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(n->claIndexUR);
+		if(claMan->IsDirty(n->claIndexUR) == false) inUse += ONE_POINT_ZERO/claMan->GetNumAssigned(n->claIndexUR);		
 		}
 	return inUse;
 	}
 
-void Tree::OutputSiteLikelihoods(vector<double> &likes, const int *under1, const int *under2){
+void Tree::OutputSiteLikelihoods(int partNum, vector<double> &likes, const int *under1, const int *under2){
 	//output level 1 is user-level output, just site nums and site likes
 	//output level 2 is for debugging, includes underflow multipliers and output of site likes in packed order
+	const SequenceData *data = dataPart->GetSubset(partNum);
 	assert(sitelikeLevel != 0);
 	//a negative sitelike level means append, but the absolute value meanings are the same
 	bool append = sitelikeLevel < 0;
-	sitelikeLevel = abs(sitelikeLevel);
+	int effectiveSitelikeLevel = abs(sitelikeLevel);
 	ofstream ordered, packed;
 	string oname = ofprefix + ".sitelikes.log";
 	ordered.open(oname.c_str(), (append == true ? ios::app : ios::out));
-	if(sitelikeLevel > 1){
+	if(effectiveSitelikeLevel > 1){
 		string pname = ofprefix + ".packedSiteLikes.log";
 		packed.open(pname.c_str(), (append == true ? ios::app : ios::out));
 		}
-
-	assert(sitelikeLevel > 0);
+	assert(effectiveSitelikeLevel > 0);
 	assert(likes.size() == data->NChar());;
 	if(!append){
 		ordered << "Tree\t-lnL\tSite\t-lnL";
-		if(sitelikeLevel > 1) 
+		if(effectiveSitelikeLevel > 1) 
 			ordered << "\tunder1\tunder2";
 		ordered << "\n";
 		}
@@ -4880,12 +4891,12 @@ void Tree::OutputSiteLikelihoods(vector<double> &likes, const int *under1, const
 		int col = data->Number(site);
 		if(col == -1){
 			ordered << "\t\t" << site+1 << "\t-";
-			if(sitelikeLevel > 1) ordered << "\t-\t-";
+			if(effectiveSitelikeLevel > 1) ordered << "\t-\t-";
 			ordered << "\n";
 			}
 		else{
 			ordered << "\t\t" << site+1 << "\t" << -likes[col];
-			if(sitelikeLevel > 1){
+			if(effectiveSitelikeLevel > 1){
 				ordered << "\t" << under1[col];
 				if(under2 != NULL)
 					ordered << "\t" << under2[col];
@@ -4895,8 +4906,8 @@ void Tree::OutputSiteLikelihoods(vector<double> &likes, const int *under1, const
 			ordered << "\n";
 			}
 		}
-	if(sitelikeLevel > 1){
-		packed << "packedIndex\ttruelnL\tunder1\tunder2" << endl;
+	if(effectiveSitelikeLevel > 1){
+		packed << "Partition subset " << partNum << "\npackedIndex\ttruelnL\tunder1\tunder2" << endl;
 		for(int c = 0;c < data->NChar();c++){
 			packed << c << "\t" << likes[c] << "\t" << under1[c];
 			if(under2 != NULL)
@@ -4905,20 +4916,20 @@ void Tree::OutputSiteLikelihoods(vector<double> &likes, const int *under1, const
 				packed << "\t-" << endl;
 			}
 		}
-	//sitelike output is non-persistent, so clear it out here
-	sitelikeLevel = 0;
 	ordered.close();
 	if(packed.is_open())
 		packed.close();
 	}
 
-void Tree::OutputSiteDerivatives(vector<double> &likes, vector<double> &d1s, vector<double> &d2s, const int *under1, const int *under2, ofstream &ordered, ofstream &packed){
-	assert(likes.size() == data->NChar());
-	ordered << "site#\ttruelnL\td1\td2\tunder1\tunder2" << endl;
-	packed << "packedIndex\ttruelnL\td1\td2\tunder1\tunder2" << endl;
+void Tree::OutputSiteDerivatives(int partNum, vector<double> &likes, vector<double> &d1s, vector<double> &d2s, const int *under1, const int *under2, ofstream &ordered, ofstream &packed){
+	const SequenceData *data = dataPart->GetSubset(partNum);
+
+	assert(likes.size() == data->NChar());;
+	ordered << "Partition subset " << partNum << "\nsite#\ttruelnL\td1\td2\tunder1\tunder2" << endl;
+	packed << "Partition subset " << partNum << "\npackedIndex\ttruelnL\td1\td2\tunder1\tunder2" << endl;
 	ordered.precision(10);
 	packed.precision(10);
-
+	
 	for(int site = 0;site < data->GapsIncludedNChar();site++){
 		int col = data->Number(site);
 		if(col == -1)
@@ -4940,12 +4951,15 @@ void Tree::OutputSiteDerivatives(vector<double> &likes, vector<double> &d1s, vec
 		}
 	}
 
-FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldat){
+FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldat, int modIndex, int dataIndex){
 
 	//this function assumes that the pmat is arranged with the nstates^2 entries for the
 	//first rate, followed by nstates^2 for the second, etc.
 	const FLOAT_TYPE *partial=partialCLA->arr;
 	const int *underflow_mult=partialCLA->underflow_mult;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nstates = mod->NStates();
 	const int nRateCats = mod->NRateCats();
@@ -4962,22 +4976,19 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	FLOAT_TYPE siteL, totallnL=ZERO_POINT_ZERO, unscaledlnL, grandSumlnL=ZERO_POINT_ZERO;
+	FLOAT_TYPE siteL, totallnL = ZERO_POINT_ZERO, unscaledlnL = ZERO_POINT_ZERO;
+	FLOAT_TYPE MkvScaler = ZERO_POINT_ZERO;
 
 	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
 	for(int i=0;i<nstates;i++) freqs[i]=mod->StateFreq(i);
 
-	vector<double> siteLikes(nchar);
+	vector<FLOAT_TYPE> siteLikes;
 
 	if(siteToScore > 0) Ldat += siteToScore;
 
 	if(nRateCats == 1){
 #ifdef OMP_TERMSCORE_NSTATE
-		#ifdef LUMP_LIKES
-		#pragma omp parallel for private(partial, Ldata, siteL, unscaledlnL) reduction(+ : totallnL, grandSumlnL)
-		#else
-		#pragma omp parallel for private(partial, Ldata, siteL, unscaledlnL) reduction(+ : totallnL)
-		#endif
+		#pragma omp parallel for private(partial, Ldata, siteL) reduction(+ : totallnL)
 		for(int i=0;i<nchar;i++){
 			Ldata = &Ldat[i];
 			partial = &partialCLA->arr[i*nstates];
@@ -4996,7 +5007,7 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 						}
 					partial += nstates;
 					}
-
+					
 				else if(*Ldata == nstates){ //total ambiguity
 					for(int from=0;from<nstates;from++){
 						siteL += partial[from] * freqs[from];
@@ -5007,12 +5018,11 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 					assert(0);
 					}
 				siteL *= rateProb[0];//multiply by (1-pinv)
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
-					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult[i]);
+						siteL += prI*freqs[conStates[i]];
+					else 
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult[i]);
 					}
 				unscaledlnL = (log(siteL) - underflow_mult[i]);
 				assert(siteL > ZERO_POINT_ZERO);//this should be positive
@@ -5021,7 +5031,22 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 				//(which might not have been removed from the data because we are only scoring a
 				//partial tree during stepwise addition) can cause the unscaledlnL to be slightly
 				//> zero.  If that is the case, just ignore it
-				if(unscaledlnL < ZERO_POINT_ZERO)
+
+				if(mod->IsNStateV()){
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					if(i == 0){
+						if(underflow_mult[i] == 0)
+							MkvScaler = -log(ONE_POINT_ZERO - nstates * siteL);
+						else 
+							MkvScaler = ZERO_POINT_ZERO;
+						}
+					else{
+						unscaledlnL += MkvScaler;
+						totallnL += (countit[i] * unscaledlnL);
+						}
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					}
+				else if(unscaledlnL < ZERO_POINT_ZERO)
 					totallnL += (countit[i] * unscaledlnL);
 
 #ifdef ALLOW_SINGLE_SITE
@@ -5031,24 +5056,17 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 			else{//nothing needs to be done if the count for this site is 0
 				}
 			Ldata++;
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumlnL += totallnL;
-				totallnL = ZERO_POINT_ZERO;
-				}
-#endif
 			if(sitelikeLevel != 0)
-				siteLikes[i] = unscaledlnL;
+				siteLikes.push_back(unscaledlnL+MkvScaler);
+			}
+		if(sitelikeLevel != 0){
+			OutputSiteLikelihoods(dataIndex, siteLikes, underflow_mult, NULL);
 			}
 		}
 	else{//multiple rates
 		FLOAT_TYPE rateL;
 #ifdef OMP_TERMSCORE_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(partial, Ldata, siteL, rateL, unscaledlnL) reduction(+ : totallnL, grandSumlnL)
-	#else
-	#pragma omp parallel for private(partial, Ldata, siteL, rateL, unscaledlnL) reduction(+ : totallnL)
-	#endif
+		#pragma omp parallel for private(partial, Ldata, siteL, rateL) reduction(+ : totallnL)
 		for(int i=0;i<nchar;i++){
 			Ldata = &Ldat[i];
 			partial = &partialCLA->arr[i*nstates*nRateCats];
@@ -5084,12 +5102,11 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 						}
 					}
 
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
-					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult[i]);
+						siteL += prI*freqs[conStates[i]];
+					else 
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult[i]);
 					}
 
 				unscaledlnL = (log(siteL) - underflow_mult[i]);
@@ -5099,7 +5116,22 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 				//(which might not have been removed from the data because we are only scoring a
 				//partial tree during stepwise addition) can cause the unscaledlnL to be slightly
 				//> zero.  If that is the case, just ignore it
-				if(unscaledlnL < ZERO_POINT_ZERO)
+
+				if(mod->IsNStateV()){
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					if(i == 0){
+						if(underflow_mult[i] == 0)
+							MkvScaler = -log(ONE_POINT_ZERO - nstates * siteL);
+						else 
+							MkvScaler = ZERO_POINT_ZERO;
+						}
+					else{
+						unscaledlnL += MkvScaler;
+						totallnL += (countit[i] * unscaledlnL);
+						}
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					}
+				else if(unscaledlnL < ZERO_POINT_ZERO)
 					totallnL += (countit[i] * unscaledlnL);
 
 #ifdef ALLOW_SINGLE_SITE
@@ -5107,37 +5139,31 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 #endif
 				}
 			Ldata++;
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumlnL += totallnL;
-				totallnL = ZERO_POINT_ZERO;
-				}
-#endif
 			if(sitelikeLevel != 0)
-				siteLikes[i] = unscaledlnL;
+				siteLikes.push_back(unscaledlnL+MkvScaler);
+			}
+		if(sitelikeLevel != 0){
+			OutputSiteLikelihoods(dataIndex, siteLikes, underflow_mult, NULL);
 			}
 		}
-#ifdef LUMP_LIKES
-	totallnL += grandSumlnL;
-#endif
-	if(sitelikeLevel != 0){
-		OutputSiteLikelihoods(siteLikes, underflow_mult, NULL);
-		}
+
 	delete []freqs;
 	return totallnL;
 	}
 
-FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldata){
+FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldata, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	const FLOAT_TYPE *partial=partialCLA->arr;
 	const int *underflow_mult=partialCLA->underflow_mult;
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 	const int nRateCats=mod->NRateCats();
 
 	const int nchar=data->NChar();
 
 	const int *countit=data->GetCounts();
-
+	
 	const FLOAT_TYPE *rateProb=mod->GetRateProbs();
 
 	const int lastConst=data->LastConstant();
@@ -5155,10 +5181,10 @@ FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA,
 	if(siteToScore > 0) Ldata = AdvanceDataPointer(Ldata, siteToScore);
 #endif
 
-	FLOAT_TYPE siteL, totallnL=ZERO_POINT_ZERO, grandSumlnL=ZERO_POINT_ZERO, unscaledlnL;
+	FLOAT_TYPE siteL, totallnL = ZERO_POINT_ZERO, unscaledlnL = ZERO_POINT_ZERO;
 	FLOAT_TYPE La, Lc, Lg, Lt;
 
-	vector<double> siteLikes(nchar);
+	vector<FLOAT_TYPE> siteLikes;
 
 	for(int i=0;i<nchar;i++){
 #ifdef USE_COUNTS_IN_BOOT
@@ -5177,7 +5203,7 @@ FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA,
 					}
 				Ldata++;
 				}
-
+				
 			else if(*Ldata == -4){ //total ambiguity
 				for(int i=0;i<nRateCats;i++){
 					La += partial[0] * rateProb[i];
@@ -5201,20 +5227,20 @@ FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA,
 					}
 				partial+=4*nRateCats;
 				}
-			if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-				int actualSite = (siteToScore < 0 ? i : siteToScore );
+			if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 				FLOAT_TYPE btot=0.0;
-				if(conBases[actualSite]&1) btot+=freqs[0];
-				if(conBases[actualSite]&2) btot+=freqs[1];
-				if(conBases[actualSite]&4) btot+=freqs[2];
-				if(conBases[actualSite]&8) btot+=freqs[3];
+				if(conBases[i]&1) btot+=freqs[0];
+				if(conBases[i]&2) btot+=freqs[1];
+				if(conBases[i]&4) btot+=freqs[2];
+				if(conBases[i]&8) btot+=freqs[3];
 				if(underflow_mult[i]==0)
 					siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]) + prI*btot);
-				else
+				else 
 					siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]) + (prI*btot*exp((FLOAT_TYPE)underflow_mult[i])));
 				}
 			else
 				siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]));
+			
 			unscaledlnL = (log(siteL) - underflow_mult[i]);
 			totallnL += (countit[i] * unscaledlnL);
 
@@ -5237,31 +5263,26 @@ FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA,
 					}while (states-- > 0);
 				}
 			}
-#ifdef LUMP_LIKES
-		if((i + 1) % LUMP_FREQ == 0){
-			grandSumlnL += totallnL;
-			totallnL = ZERO_POINT_ZERO;
-			}
-#endif
-			if(sitelikeLevel != 0)
-				siteLikes[i] = unscaledlnL;
-			}
-#ifdef LUMP_LIKES
-	totallnL += grandSumlnL;
-#endif
+
+		if(sitelikeLevel != 0)
+			siteLikes.push_back(unscaledlnL);
+		}
 	if(sitelikeLevel != 0){
-		OutputSiteLikelihoods(siteLikes, underflow_mult, NULL);
+		OutputSiteLikelihoods(dataIndex, siteLikes, underflow_mult, NULL);
 		}
 	return totallnL;
 	}
-
-FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA, const CondLikeArray *childCLA, const FLOAT_TYPE *prmat){
+	
+FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA, const CondLikeArray *childCLA, const FLOAT_TYPE *prmat, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	const FLOAT_TYPE *CL1=childCLA->arr;
 	const FLOAT_TYPE *partial=partialCLA->arr;
 	const int *underflow_mult1=partialCLA->underflow_mult;
 	const int *underflow_mult2=childCLA->underflow_mult;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nchar=data->NChar();
 	const int nRateCats=mod->NRateCats();
@@ -5282,12 +5303,10 @@ FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA,
 	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	//DEBUG
-	//FLOAT_TYPE siteL, totallnL=ZERO_POINT_ZERO, grandSumlnL=ZERO_POINT_ZERO, unscaledlnL;
-	double siteL, totallnL=ZERO_POINT_ZERO, grandSumlnL=ZERO_POINT_ZERO, unscaledlnL;
+	FLOAT_TYPE siteL, totallnL = ZERO_POINT_ZERO, unscaledlnL = ZERO_POINT_ZERO;
 	FLOAT_TYPE La, Lc, Lg, Lt;
 
-	vector<double> siteLikes(nchar);
+	vector<FLOAT_TYPE> siteLikes;
 
 	for(int i=0;i<nchar;i++){
 #ifdef USE_COUNTS_IN_BOOT
@@ -5305,21 +5324,20 @@ FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA,
 				partial+=4;
 				CL1+=4;
 				}
-			if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-				int actualSite = (siteToScore < 0 ? i : siteToScore );
+			if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 				FLOAT_TYPE btot=ZERO_POINT_ZERO;
-				if(conBases[actualSite]&1) btot+=freqs[0];
-				if(conBases[actualSite]&2) btot+=freqs[1];
-				if(conBases[actualSite]&4) btot+=freqs[2];
-				if(conBases[actualSite]&8) btot+=freqs[3];
+				if(conBases[i]&1) btot+=freqs[0];
+				if(conBases[i]&2) btot+=freqs[1];
+				if(conBases[i]&4) btot+=freqs[2];
+				if(conBases[i]&8) btot+=freqs[3];
 				if(underflow_mult1[i] + underflow_mult2[i] == 0)
 					siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]) + prI*btot);
-				else
+				else 
 					siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]) + (prI*btot*exp((FLOAT_TYPE)underflow_mult1[i]+underflow_mult2[i])));
 				}
 			else
-				siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]));
-
+				siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]));	
+			
 			unscaledlnL = (log(siteL) - underflow_mult1[i] - underflow_mult2[i]);
 			totallnL += (countit[i] * unscaledlnL);
 
@@ -5336,32 +5354,26 @@ FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA,
 			CL1+=4*nRateCats;
 #endif
 			}
-#ifdef LUMP_LIKES
-		if((i + 1) % LUMP_FREQ == 0){
-			grandSumlnL += totallnL;
-			totallnL = ZERO_POINT_ZERO;
-			}
-#endif
-		if(sitelikeLevel != 0)
-			siteLikes[i] = unscaledlnL;
-		}
 
-#ifdef LUMP_LIKES
-	totallnL += grandSumlnL;
-#endif
+		if(sitelikeLevel != 0)
+			siteLikes.push_back(unscaledlnL);
+		}
 	if(sitelikeLevel != 0){
-		OutputSiteLikelihoods(siteLikes, underflow_mult1, underflow_mult2);
+		OutputSiteLikelihoods(dataIndex, siteLikes, underflow_mult1, underflow_mult2);
 		}
 	return totallnL;
 	}
 
-FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, const CondLikeArray *childCLA, const FLOAT_TYPE *prmat){
+FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, const CondLikeArray *childCLA, const FLOAT_TYPE *prmat, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with nstates^2 entries for the
 	//first rate, followed by nstate^2 for the second, etc.
 	const FLOAT_TYPE *CL1=childCLA->arr;
 	const FLOAT_TYPE *partial=partialCLA->arr;
 	const int *underflow_mult1=partialCLA->underflow_mult;
 	const int *underflow_mult2=childCLA->underflow_mult;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nchar=data->NChar();
 	const int *countit=data->GetCounts();
@@ -5378,20 +5390,18 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
-	FLOAT_TYPE totallnL=ZERO_POINT_ZERO, siteL, unscaledlnL, grandSumlnL=ZERO_POINT_ZERO;
+	FLOAT_TYPE totallnL=ZERO_POINT_ZERO, siteL;
+	FLOAT_TYPE unscaledlnL;
+	FLOAT_TYPE MkvScaler=ZERO_POINT_ZERO;
 
 	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
 	for(int i=0;i<nstates;i++) freqs[i]=mod->StateFreq(i);
 
-	vector<double> siteLikes(nchar);
+	vector<FLOAT_TYPE> siteLikes;
 
 	if(nRateCats == 1){
 #ifdef OMP_INTSCORE_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(partial, CL1, siteL, unscaledlnL) reduction(+ : totallnL, grandSumlnL)
-	#else
 	#pragma omp parallel for private(partial, CL1, siteL, unscaledlnL) reduction(+ : totallnL)
-	#endif
 		for(int i=0;i<nchar;i++){
 			partial = &(partialCLA->arr[nstates*i]);
 			CL1		= &(childCLA->arr[nstates*i]);
@@ -5413,12 +5423,11 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 					siteL += temp * partial[from] * freqs[from];
 					}
 				siteL *= rateProb[0]; //multiply by (1-pinv)
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult1[i] + underflow_mult2[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
-					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
+						siteL += prI*freqs[conStates[i]];
+					else 
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
 					}
 				CL1 += nstates;
 				partial += nstates;
@@ -5430,7 +5439,22 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 				//(which might not have been removed from the data because we are only scoring a
 				//partial tree during stepwise addition) can cause the unscaledlnL to be slightly
 				//> zero.  If that is the case, just ignore it
-				if(unscaledlnL < ZERO_POINT_ZERO)
+
+				if(mod->IsNStateV()){
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					if(i == 0){
+						if(underflow_mult1[i] + underflow_mult2[i] == 0)
+							MkvScaler = -log(ONE_POINT_ZERO - nstates * siteL);
+						else 
+							MkvScaler = ZERO_POINT_ZERO;
+						}
+					else{
+						unscaledlnL += MkvScaler;
+						totallnL += (countit[i] * unscaledlnL);
+						}
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					}
+				else if(unscaledlnL < ZERO_POINT_ZERO)
 					totallnL += (countit[i] * unscaledlnL);
 
 #ifdef ALLOW_SINGLE_SITE
@@ -5439,25 +5463,19 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 				}
 			else{//nothing needs to be done if the count for this site is 0
 				}
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumlnL += totallnL;
-				totallnL = ZERO_POINT_ZERO;
-				}
-#endif
+
 			if(sitelikeLevel != 0)
-				siteLikes[i] = unscaledlnL;
+				siteLikes.push_back(unscaledlnL+MkvScaler);
+			}
+		if(sitelikeLevel != 0){
+			OutputSiteLikelihoods(dataIndex, siteLikes, underflow_mult1, underflow_mult2);
 			}
 		}
 	else{
 		FLOAT_TYPE siteL, tempL, rateL;
-
+		
 #ifdef OMP_INTSCORE_NSTATE
-	#ifdef LUMP_LIKES
-	#pragma omp parallel for private(partial, CL1, siteL, tempL, rateL, unscaledlnL) reduction(+ : totallnL, grandSumlnL)
-	#else
-	#pragma omp parallel for private(partial, CL1, siteL, tempL, rateL, unscaledlnL) reduction(+ : totallnL)
-	#endif
+		#pragma omp parallel for private(partial, CL1, siteL, tempL, rateL) reduction(+ : totallnL)
 		for(int i=0;i<nchar;i++){
 			partial = &(partialCLA->arr[nRateCats*nstates*i]);
 			CL1		= &(childCLA->arr[nRateCats*nstates*i]);
@@ -5485,12 +5503,12 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 					partial += nstates;
 					CL1 += nstates;
 					}
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult1[i] + underflow_mult2[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
-					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
+						siteL += prI*freqs[conStates[i]];
+					else 
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
 					}
 				unscaledlnL = (log(siteL) - underflow_mult1[i] - underflow_mult2[i]);
 				assert(siteL > ZERO_POINT_ZERO);//this should be positive
@@ -5499,7 +5517,22 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 				//(which might not have been removed from the data because we are only scoring a
 				//partial tree during stepwise addition) can cause the unscaledlnL to be slightly
 				//> zero.  If that is the case, just ignore it
-				if(unscaledlnL < ZERO_POINT_ZERO)
+
+				if(mod->IsNStateV()){
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					if(i == 0){
+						if(underflow_mult1[i] + underflow_mult2[i] == 0)
+							MkvScaler = -log(ONE_POINT_ZERO - nstates * siteL);
+						else 
+							MkvScaler = ZERO_POINT_ZERO;
+						}
+					else{
+						unscaledlnL += MkvScaler;
+						totallnL += (countit[i] * unscaledlnL);
+						}
+					assert(unscaledlnL < ZERO_POINT_ZERO);
+					}
+				else if(unscaledlnL < ZERO_POINT_ZERO)
 					totallnL += (countit[i] * unscaledlnL);
 
 #ifdef ALLOW_SINGLE_SITE
@@ -5508,264 +5541,17 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 				}
 			else{ //nothing needs to be done if the count of this site is 0
 				}
-#ifdef LUMP_LIKES
-			if((i + 1) % LUMP_FREQ == 0){
-				grandSumlnL += totallnL;
-				totallnL = ZERO_POINT_ZERO;
-				}
-#endif
+
 			if(sitelikeLevel != 0)
-				siteLikes[i] = unscaledlnL;
+				siteLikes.push_back(unscaledlnL+MkvScaler);
+			}
+		if(sitelikeLevel != 0){
+			OutputSiteLikelihoods(dataIndex, siteLikes, underflow_mult1, underflow_mult2);
 			}
 		}
-#ifdef LUMP_LIKES
-	totallnL += grandSumlnL;
-#endif
-	if(sitelikeLevel != 0){
-		OutputSiteLikelihoods(siteLikes, underflow_mult1, underflow_mult2);
-		}
+
 	delete []freqs;
 	return totallnL;
-	}
-
-void Tree::GetStatewiseUnscaledPosteriorsPartialInternalNState(CondLikeArray *destCLA, const CondLikeArray *partialCLA, const CondLikeArray *childCLA, const FLOAT_TYPE *prmat){
-	
-	FLOAT_TYPE *dest=destCLA->arr;
-	const FLOAT_TYPE *CL1=childCLA->arr;
-	const FLOAT_TYPE *partial=partialCLA->arr;
-	const int *underflow_mult1=partialCLA->underflow_mult;
-	const int *underflow_mult2=childCLA->underflow_mult;
-
-	const int nchar=data->NChar();
-	const int *countit=data->GetCounts();
-	const int nRateCats = mod->NRateCats();
-	const int nstates = mod->NStates();
-
-	const FLOAT_TYPE *rateProb=mod->GetRateProbs();
-	const FLOAT_TYPE prI=mod->PropInvar();
-	const int lastConst=data->LastConstant();
-	const int *conStates=data->GetConstStates();
-
-#ifdef UNIX
-	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-#endif
-
-	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
-	for(int i=0;i<nstates;i++) 
-		freqs[i]=mod->StateFreq(i);
-
-	//note that we don't need to zero the whole thing
-	//this was not guaranteed to be safe
-	//memset(dest, 0, nchar * nstates * sizeof(FLOAT_TYPE));
-	for(int d = 0;d < nchar * nstates;d++)
-		dest[d] = ZERO_POINT_ZERO;
-
-	for(int i=0;i<nchar;i++){
-		for(int rate=0;rate<nRateCats;rate++){
-			int rateOffset = rate*nstates*nstates;
-			for(int from=0;from<nstates;from++){
-				FLOAT_TYPE temp = ZERO_POINT_ZERO;
-				int offset = from * nstates;
-				for(int to=0;to<nstates;to++){
-					temp += prmat[rateOffset + offset + to] * CL1[to];
-					}
-				dest[from] += temp * partial[from] * freqs[from] * rateProb[rate];
-				}
-			partial += nstates;
-			CL1 += nstates;
-			}
-
-		if((mod->NoPinvInModel() == false) && (i<=lastConst)){
-			//conStates has different meaning with nuc and other models.  
-			//With nuc it is the base in 1, 2, 4, 8 notation (possibly mulitple bits set if ambiguity)
-			//With other models it is the state index, starting at 0
-			FLOAT_TYPE pinvRescaler = ONE_POINT_ZERO;
-			//if the site is constant but was rescaled, this must be done 
-			if((underflow_mult1[i] + underflow_mult2[i]) != 0)
-				pinvRescaler = exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
-			if(nstates > 4){
-				dest[conStates[i]] += prI * freqs[conStates[i]] * pinvRescaler;
-				}
-			else{
-				if(conStates[i]&1)
-					dest[0] += prI * freqs[0] * pinvRescaler;
-				if(conStates[i]&2) 
-					dest[1] += prI * freqs[1] * pinvRescaler;
-				if(conStates[i]&4) 
-					dest[2] += prI * freqs[2] * pinvRescaler;
-				if(conStates[i]&8) 
-					dest[3] += prI * freqs[3] * pinvRescaler;
-				}
-			}
-		dest += nstates;
-		}
-	delete []freqs;
-	}
-
-//this isn't currently used, with nuc models also going through the nstate version
-void Tree::GetStatewiseUnscaledPosteriorsPartialTerminalRateHet(CondLikeArray *destCLA, const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldata){
-	//this function assumes that the pmat is arranged with the 16 entries for the
-	//fi0rst rate, followed by 16 for the second, etc.
-	FLOAT_TYPE *dest=destCLA->arr;
-	const FLOAT_TYPE *partial=partialCLA->arr;
-	const int *underflow_mult=partialCLA->underflow_mult;
-
-	const int nstates = mod->NStates();
-	const int nchar=data->NChar();
-	const int nRateCats = mod->NRateCats();
-
-	const FLOAT_TYPE *rateProb=mod->GetRateProbs();
-
-	const int lastConst=data->LastConstant();
-	const int *conStates=data->GetConstStates();
-	const FLOAT_TYPE prI=mod->PropInvar();
-
-	FLOAT_TYPE freqs[4];
-	for(int i=0;i<4;i++) 
-		freqs[i]=mod->StateFreq(i);
-
-#ifdef UNIX
-	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-#endif
-
-	//note that we don't need to zero the whole thing
-	//this was not guaranteed to be safe
-	//memset(dest, 0, nchar * nstates * sizeof(FLOAT_TYPE));
-	for(int d = 0;d < nchar * nstates;d++)
-		dest[d] = ZERO_POINT_ZERO;
-
-	for(int i=0;i<nchar;i++){
-		if(*Ldata > -1){ //no ambiguity
-			for(int i=0;i<nRateCats;i++){
-				dest[0]  += prmat[(*Ldata)+16*i] * partial[0] * rateProb[i] * freqs[0];
-				dest[1]  += prmat[(*Ldata+4)+16*i] * partial[1] * rateProb[i] * freqs[1];
-				dest[2]  += prmat[(*Ldata+8)+16*i] * partial[2] * rateProb[i] * freqs[2];
-				dest[3]  += prmat[(*Ldata+12)+16*i] * partial[3] * rateProb[i] * freqs[3];
-				partial += 4;
-				}
-			Ldata++;
-			}
-
-		else if(*Ldata == -4){ //total ambiguity
-			for(int i=0;i<nRateCats;i++){
-				dest[0] += partial[0] * rateProb[i] * freqs[0];
-				dest[1] += partial[1] * rateProb[i] * freqs[1];
-				dest[2] += partial[2] * rateProb[i] * freqs[2];
-				dest[3] += partial[3] * rateProb[i] * freqs[3];
-				partial += 4;
-				}
-			Ldata++;
-			}
-		else{ //partial ambiguity
-			char nstates=-1 * *(Ldata++);
-			for(int i=0;i<nstates;i++){
-				for(int i=0;i<nRateCats;i++){
-					dest[0] += prmat[(*Ldata)+16*i]  * partial[4*i] * rateProb[i] * freqs[0];;
-					dest[1] += prmat[(*Ldata+4)+16*i] * partial[1+4*i] * rateProb[i] * freqs[1];;
-					dest[2] += prmat[(*Ldata+8)+16*i]* partial[2+4*i] * rateProb[i] * freqs[2];;
-					dest[3] += prmat[(*Ldata+12)+16*i]* partial[3+4*i] * rateProb[i] * freqs[3];;
-					}
-				Ldata++;
-				}
-			partial+=4*nRateCats;
-			}
-		if((mod->NoPinvInModel() == false) && (i<=lastConst)){
-			FLOAT_TYPE pinvRescaler = ONE_POINT_ZERO;
-			//if the site is constant but was rescaled, this must be done 
-			if(underflow_mult[i] != 0)
-				pinvRescaler = exp((FLOAT_TYPE)underflow_mult[i]);
-			if(conStates[i]&1)
-				dest[0] += prI * freqs[0] * pinvRescaler;
-			if(conStates[i]&2) 
-				dest[1] += prI * freqs[1] * pinvRescaler;
-			if(conStates[i]&4) 
-				dest[2] += prI * freqs[2] * pinvRescaler;
-			if(conStates[i]&8) 
-				dest[3] += prI * freqs[3] * pinvRescaler;
-			}
-		dest += nstates;
-		}
-	}
-
-void Tree::GetStatewiseUnscaledPosteriorsPartialTerminalNState(CondLikeArray *destCLA, const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldata){
-	//this function assumes that the pmat is arranged with the nstates^2 entries for the
-	//first rate, followed by nstates^2 for the second, etc.
-	FLOAT_TYPE *dest=destCLA->arr;
-	const FLOAT_TYPE *partial=partialCLA->arr;
-	const int *underflow_mult=partialCLA->underflow_mult;
-
-	const int nstates = mod->NStates();
-	const int nRateCats = mod->NRateCats();
-	const int nchar = data->NChar();
-
-	const FLOAT_TYPE *rateProb=mod->GetRateProbs();
-	const int lastConst=data->LastConstant();
-	const int *conStates=data->GetConstStates();
-	const FLOAT_TYPE prI=mod->PropInvar();
-
-#ifdef UNIX
-	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-#endif
-
-	FLOAT_TYPE siteL, totallnL=ZERO_POINT_ZERO, unscaledlnL, grandSumlnL=ZERO_POINT_ZERO;
-
-	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
-	for(int i=0;i<nstates;i++) 
-		freqs[i]=mod->StateFreq(i);
-
-	//note that we don't need to zero the whole thing
-	//this was not guaranteed to be safe
-	//memset(dest, 0, nchar * nstates * sizeof(FLOAT_TYPE));
-	for(int d = 0;d < nchar * nstates;d++)
-		dest[d] = ZERO_POINT_ZERO;
-
-	for(int i=0;i<nchar;i++){
-		if(*Ldata < nstates){ //no ambiguity
-			for(int rate=0;rate<nRateCats;rate++){
-				const int rateOffset = rate * nstates * nstates;
-				for(int from=0;from<nstates;from++){
-					const int offset = from * nstates;
-					dest[from] += prmat[rateOffset + offset + (*Ldata)] * partial[from] * freqs[from] * rateProb[rate];
-					}
-				partial += nstates;
-				}
-			}
-		else{ //total ambiguity
-			for(int rate=0;rate<nRateCats;rate++){
-				for(int from=0;from<nstates;from++){
-					dest[from] += partial[from] * freqs[from] * rateProb[rate];
-					}
-				partial += nstates;
-				}
-			}
-
-		if((mod->NoPinvInModel() == false) && (i<=lastConst)){
-			//conStates has different meaning with nuc and other models.  
-			//With nuc it is the base in 1, 2, 4, 8 notation (possibly mulitple bits set if ambiguity)
-			//With other models it is the state index, starting at 0
-			FLOAT_TYPE pinvRescaler = ONE_POINT_ZERO;
-			//if the site is constant but was rescaled, this must be done 
-			if(underflow_mult[i] != 0)
-				pinvRescaler = exp((FLOAT_TYPE)underflow_mult[i]);
-			if(nstates > 4){
-				dest[conStates[i]] += prI * freqs[conStates[i]] * pinvRescaler;
-				}
-			else{
-				if(conStates[i]&1)
-					dest[0] += prI * freqs[0] * pinvRescaler;
-				if(conStates[i]&2) 
-					dest[1] += prI * freqs[1] * pinvRescaler;
-				if(conStates[i]&4) 
-					dest[2] += prI * freqs[2] * pinvRescaler;
-				if(conStates[i]&8) 
-					dest[3] += prI * freqs[3] * pinvRescaler;
-				}
-			}
-
-		Ldata++;
-		dest += nstates;
-		}
 	}
 
 void Tree::LocalMove(){
@@ -5872,7 +5658,7 @@ void Tree::LocalMove(){
 					d->left=v;
 					v->next=tempnode;
 					tempnode->next=tempnode2;
-					tempnode2->next=NULL;
+					tempnode2->next=NULL;				
 					}
 				}
 			}
@@ -5913,7 +5699,7 @@ void Tree::LocalMove(){
 		else{
 			v->left->next->next=c && v->left->next=d (case 3)
 			}
-	*/
+	*/	
 
 
 
@@ -5944,7 +5730,7 @@ void Tree::LocalMove(){
 		//calculate x and y
 		x=rnd.uniform()*mprime;
 		y=(a->dlen+u->dlen) * (mprime/m);
-
+		
 		if(x<y){//all cases
 			//no topo change
 			a->dlen=x;
@@ -6021,7 +5807,7 @@ void Tree::LocalMove(){
 			else c->dlen=mprime-y;
 			TraceDirtynessToRoot(a->anc);
 //			tree->AdjustCLArrayFlagsBelow(a->anc, curMove);
-			}
+			}			
 		else{
 			//case 1
 			if(cPosition==1){
@@ -6074,7 +5860,7 @@ void Tree::LocalMove(){
 				}
 			}
 		}
-	}
+	}	
 
 void Tree::NNIMutate(int node, int branch, FLOAT_TYPE optPrecision, int subtreeNode){
 
@@ -6087,7 +5873,7 @@ void Tree::NNIMutate(int node, int branch, FLOAT_TYPE optPrecision, int subtreeN
 	assert(node<numNodesTotal);
 	connector = allNodes[node];
 	assert(connector->IsInternal());
-
+	
 	if(branch==0){
 		cut=connector->left;
 		sib=connector->right;
@@ -6130,7 +5916,7 @@ void Tree::NNIMutate(int node, int branch, FLOAT_TYPE optPrecision, int subtreeN
 	//put everything in its place
 	broken->SubstituteNodeWithRespectToAnc(connector);
 	connector->AddDes(broken);
-
+	
 	//try some branch length optimization
 	SweepDirtynessOverTree(connector, cut);
 	MakeNodeDirty(connector);
@@ -6145,7 +5931,7 @@ void Tree::NNIMutate(int node, int branch, FLOAT_TYPE optPrecision, int subtreeN
 
 /*
 void Tree::OutputBinaryFormattedTree(ofstream &out) const{
-
+	
 	for(int i=0;i<numNodesTotal;i++){
 		allNodes[i]->OutputBinaryNodeInfo(out);
 		}
@@ -6182,8 +5968,8 @@ void Tree::ReadBinaryFormattedTree(FILE *in){
 		int wrong = numTipsTotal;
 		numTipsTotal = expectedNumTipsTotal;
 		throw ErrorException("Number of taxa from checkpoint (%d) is not the same as in the current\n\tdatafile (%d)! The checkpoint seems to be from a different run!", wrong, expectedNumTipsTotal);
-		}
-
+		}	
+	
 	fread((char*) &lnL, sizeof(FLOAT_TYPE), 1, in);
 	fread((char*) &numTipsAdded, sizeof(numTipsAdded), 1, in);
 	fread((char*) &numNodesAdded, sizeof(numNodesAdded), 1, in);
@@ -6201,15 +5987,15 @@ void Tree::ReadBinaryFormattedTree(FILE *in){
 	fread((char*) &dum, sizeof(dum), 1, in);
 	if(dum == 0) allNodes[0]->prev = NULL;
 	else allNodes[0]->prev = allNodes[dum];
-
+	
 	fread((char*) &dum, sizeof(dum), 1, in);
 	if(dum == 0) allNodes[0]->next = NULL;
 	else allNodes[0]->next = allNodes[dum];
-
+	
 	fread((char*) &dum, sizeof(dum), 1, in);
 	if(dum == 0) allNodes[0]->anc = NULL;
 	else allNodes[0]->anc = allNodes[dum];
-
+	
 	fread((char*) &allNodes[0]->dlen, sizeof(FLOAT_TYPE), 1, in);
 
 //	double d;
@@ -6233,72 +6019,61 @@ void Tree::ReadBinaryFormattedTree(FILE *in){
 	for(int i=numTipsTotal+1;i<numNodesTotal;i++){
 		fread((char*) &dum, sizeof(dum), 1, in);
 		allNodes[i]->left = allNodes[dum];
-
+		
 		fread((char*) &dum, sizeof(dum), 1, in);
 		allNodes[i]->right = allNodes[dum];
-
+		
 		fread((char*) &dum, sizeof(dum), 1, in);
 		if(dum == 0) allNodes[i]->prev = NULL;
 		else allNodes[i]->prev = allNodes[dum];
-
+		
 		fread((char*) &dum, sizeof(dum), 1, in);
 		if(dum == 0) allNodes[i]->next = NULL;
 		else allNodes[i]->next = allNodes[dum];
-
+		
 		//all non-root nodes will have an anc, which might be nodenum 0 (the root)
 		//so, don't test for zero here
 		fread((char*) &dum, sizeof(dum), 1, in);
 		allNodes[i]->anc = allNodes[dum];
-
+		
 		fread((char*) &allNodes[i]->dlen, sizeof(FLOAT_TYPE), 1, in);
 		}
 	}
 
-FLOAT_TYPE Tree::OptimizeOmegaParameters(FLOAT_TYPE prec){
+FLOAT_TYPE Tree::OptimizeOmegaParameters(FLOAT_TYPE prec, int modnum){
 	FLOAT_TYPE omegaImprove=ZERO_POINT_ZERO;
 	FLOAT_TYPE minVal = 1.0e-5;
 	int i=0;
 
+	Model *mod = modPart->GetModel(modnum);
+
 #undef DEBUG_OMEGA_OPT
 
-	//codon models can be a little unstable, so make the difference in scores that we're looking for in OptBounded a bit larger.  9 is the default value.
-	//it really shouldn't matter in almost all cases.
-	FLOAT_TYPE scoreDiffTarget;
-#ifdef SINGLE_PRECISION_FLOATS
-	scoreDiffTarget = 4.0;
-#else
-	scoreDiffTarget = 7.0;
-#endif
-
 	//limiting change in any one pass
-	double maxRateChangeProportion = 2.0; //this is the allowed proportion of change, i.e., x is bounded by x/maxRateChangeProportion and x * maxRateChangeProportion
-	double maxProbChange = 0.10; //this is the actual allowed magnitude of change, i.e, x - maxProbChange aned x + maxProbChange
-	double curVal;
-
-	//give the first rate more leeway in the down direction, since it may want to approach zero
-	if(mod->NRateCats() == 1){ 
-		curVal = mod->Omega(i);
-		omegaImprove += OptimizeBoundedParameter(prec, curVal, 0,
-			max(minVal, curVal / 5.0),
-			max(min(9999.9, curVal * maxRateChangeProportion), 0.01),
-			&Model::SetOmega, scoreDiffTarget);
-		}
+	double maxRateChangeProp = 0.5;
+	double maxProbChange = 0.10;
+	
+	//limiting here now too
+	if(mod->NRateCats() == 1) //allow a bit more change for a single omega
+		omegaImprove += OptimizeBoundedParameter(prec, mod->Omega(i), 0, 
+			max(minVal, mod->Omega(0)*0.333),
+			min(9999.9, mod->Omega(0)+mod->Omega(0)*0.333), modnum,
+			&Model::SetOmega);
 	else{
-		curVal = mod->Omega(i);
-		omegaImprove += OptimizeBoundedParameter(prec, curVal, i,
-			max(minVal, curVal / 5.0),
-			min(mod->Omega(i+1), max(curVal * maxRateChangeProportion, 0.01)), 
-			&Model::SetOmega, scoreDiffTarget);
+		omegaImprove += OptimizeBoundedParameter(prec, mod->Omega(i), i, 
+			max(minVal, mod->Omega(i)*maxRateChangeProp),
+			min(mod->Omega(i+1), mod->Omega(i)+mod->Omega(i)*maxRateChangeProp), modnum,
+			&Model::SetOmega);
 
 #ifdef DEBUG_OMEGA_OPT
 		for(int j=0;j<mod->NRateCats();j++)
 			outman.UserMessage("%f\t%f", mod->Omega(j), mod->OmegaProb(j));
 #endif
-		curVal = mod->OmegaProb(i);
-		omegaImprove += OptimizeBoundedParameter(prec, curVal, i,
-			max(minVal, curVal-maxProbChange),
-			min((ONE_POINT_ZERO - (minVal * (FLOAT_TYPE)(mod->NRateCats() - 1))),  curVal+maxProbChange),
-			&Model::SetOmegaProb, scoreDiffTarget);
+		
+		omegaImprove += OptimizeBoundedParameter(prec, mod->OmegaProb(i), i,
+			max(minVal, mod->OmegaProb(i)-maxProbChange),
+			min(ONE_POINT_ZERO,  mod->OmegaProb(i)+maxProbChange), modnum,
+			&Model::SetOmegaProb);
 
 #ifdef DEBUG_OMEGA_OPT
 		for(int j=0;j<mod->NRateCats();j++)
@@ -6306,42 +6081,40 @@ FLOAT_TYPE Tree::OptimizeOmegaParameters(FLOAT_TYPE prec){
 #endif
 
 		for(i=1;i < mod->NRateCats()-1;i++){
-			curVal = mod->Omega(i);
-			omegaImprove += OptimizeBoundedParameter(prec, curVal, i,
-				max(mod->Omega(i-1), curVal / maxRateChangeProportion),
-				min(mod->Omega(i+1), max(curVal * maxRateChangeProportion, 0.01)), 
-				&Model::SetOmega, scoreDiffTarget);
+			omegaImprove += OptimizeBoundedParameter(prec, mod->Omega(i), i, 
+				max(mod->Omega(i-1), mod->Omega(i)*maxRateChangeProp),
+				min(mod->Omega(i+1), mod->Omega(i)+mod->Omega(i)*maxRateChangeProp), modnum,
+				&Model::SetOmega);
 
 #ifdef DEBUG_OMEGA_OPT
 			for(int j=0;j<mod->NRateCats();j++)
 				outman.UserMessage("%f\t%f", mod->Omega(j), mod->OmegaProb(j));
 #endif
-			curVal = mod->OmegaProb(i);
-			omegaImprove += OptimizeBoundedParameter(prec, curVal, i,
-				max(minVal, curVal-maxProbChange),
-				min((ONE_POINT_ZERO - (minVal * (FLOAT_TYPE)(mod->NRateCats() - 1))),  curVal+maxProbChange),
-				&Model::SetOmegaProb, scoreDiffTarget);
+
+			omegaImprove += OptimizeBoundedParameter(prec, mod->OmegaProb(i), i,
+				max(minVal, mod->OmegaProb(i)-maxProbChange),
+				min(ONE_POINT_ZERO,  mod->OmegaProb(i)+maxProbChange), modnum,
+				&Model::SetOmegaProb);
 
 #ifdef DEBUG_OMEGA_OPT
 			for(int j=0;j<mod->NRateCats();j++)
 				outman.UserMessage("%f\t%f", mod->Omega(j), mod->OmegaProb(j));
 #endif
 			}
-		curVal = mod->Omega(i);
-		omegaImprove += OptimizeBoundedParameter(prec, curVal, i,
-			max(mod->Omega(i-1), curVal / maxRateChangeProportion),
-			min(9999.9, curVal * maxRateChangeProportion),
-			&Model::SetOmega, scoreDiffTarget);
+		omegaImprove += OptimizeBoundedParameter(prec, mod->Omega(i), i, 
+			max(mod->Omega(i-1), mod->Omega(i)*maxRateChangeProp),
+			min(9999.9, mod->Omega(i)+mod->Omega(i)*maxRateChangeProp), modnum,
+			&Model::SetOmega);
 
 #ifdef DEBUG_OMEGA_OPT
 		for(int j=0;j<mod->NRateCats();j++)
 			outman.UserMessage("%f\t%f", mod->Omega(j), mod->OmegaProb(j));
 #endif
-		curVal = mod->OmegaProb(i);
-		omegaImprove += OptimizeBoundedParameter(prec, curVal, i,
-			max(minVal, curVal-maxProbChange),
-			min((ONE_POINT_ZERO - (minVal * (FLOAT_TYPE)(mod->NRateCats() - 1))),  curVal+maxProbChange),
-			&Model::SetOmegaProb, scoreDiffTarget);
+
+		omegaImprove += OptimizeBoundedParameter(prec, mod->OmegaProb(i), i,
+			max(minVal, mod->OmegaProb(i)-maxProbChange),
+			min(ONE_POINT_ZERO,  mod->OmegaProb(i)+maxProbChange), modnum,
+			&Model::SetOmegaProb);
 
 #ifdef DEBUG_OMEGA_OPT
 		for(int j=0;j<mod->NRateCats();j++)
@@ -6350,7 +6123,7 @@ FLOAT_TYPE Tree::OptimizeOmegaParameters(FLOAT_TYPE prec){
 		}
 
 /*
-	if(mod->NRateCats() == 1)
+	if(mod->NRateCats() == 1) 
 		omegaImprove += OptimizeBoundedParameter(prec, mod->Omega(i), 0, minVal, 9999.9, &Model::SetOmega);
 	else{
 		omegaImprove += OptimizeBoundedParameter(prec, mod->Omega(i), i, minVal, mod->Omega(1), &Model::SetOmega);
@@ -6377,16 +6150,18 @@ FLOAT_TYPE Tree::OptimizeOmegaParameters(FLOAT_TYPE prec){
 */	return omegaImprove;
 	}
 
-FLOAT_TYPE Tree::OptimizeEquilibriumFreqs(FLOAT_TYPE prec){
+FLOAT_TYPE Tree::OptimizeEquilibriumFreqs(FLOAT_TYPE prec, int modnum){
 	FLOAT_TYPE freqImprove=ZERO_POINT_ZERO;
 	int i=0;
+
+	Model *mod = modPart->GetModel(modnum);
 
 	//limiting change in any one pass much more
 	double maxChangeProportion = 1.2;
 
 	for(i=0;i < mod->NStates();i++){
 		double curVal = mod->StateFreq(i);
-		freqImprove += OptimizeBoundedParameter(prec, curVal, i, 
+		freqImprove += OptimizeBoundedParameter(modnum, prec, curVal, i, 
 			min(max((mod->NStates() > 4 ? 0.0001 : 0.01), curVal / maxChangeProportion), curVal),
 			max(min(0.96, curVal * maxChangeProportion), curVal),
 			&Model::SetEquilibriumFreq);
@@ -6394,21 +6169,24 @@ FLOAT_TYPE Tree::OptimizeEquilibriumFreqs(FLOAT_TYPE prec){
 	return freqImprove;
 	}
 
-FLOAT_TYPE Tree::OptimizeRelativeNucRates(FLOAT_TYPE prec){
+FLOAT_TYPE Tree::OptimizeRelativeNucRates(FLOAT_TYPE prec, int modnum){
 	FLOAT_TYPE rateImprove=ZERO_POINT_ZERO;
 	FLOAT_TYPE minVal = 1.0e-5;
 	int i=0;
+
+	const ModelSpecification *modSpec = modSpecSet.GetModSpec(modnum);
+	Model *mod = modPart->GetModel(modnum);
 
 	//codon models can be a little unstable, so make the difference in scores that we're looking for in OptBounded a bit larger.  9 is the default value.
 	//it really shouldn't matter in almost all cases.
 	FLOAT_TYPE scoreDiffTarget;
 #ifdef SINGLE_PRECISION_FLOATS
-	if(modSpec.IsCodon())
+	if(modSpec->IsCodon())
 		scoreDiffTarget = 4.0;
 	else
 		scoreDiffTarget = 5.0;
 #else
-	if(modSpec.IsCodon())
+	if(modSpec->IsCodon())
 		scoreDiffTarget = 7.0;
 	else
 		scoreDiffTarget = 9.0;
@@ -6421,7 +6199,7 @@ FLOAT_TYPE Tree::OptimizeRelativeNucRates(FLOAT_TYPE prec){
 	if(mod->Nst() == 2){
 		//this was wrong - it should be Rates(1) i.e., K that is being optimized here
 		double curVal = mod->Rates(1);
-		rateImprove += OptimizeBoundedParameter(prec, curVal, 1, 
+		rateImprove += OptimizeBoundedParameter(modnum, prec, curVal, 1, 
 				max(min(1.0e-3, curVal), curVal / maxChangeProportion),
 				min(max(999.0, curVal), curVal * maxChangeProportion),
 				&Model::SetRelativeNucRate, scoreDiffTarget);
@@ -6432,206 +6210,138 @@ FLOAT_TYPE Tree::OptimizeRelativeNucRates(FLOAT_TYPE prec){
 				&Model::SetRelativeNucRate);
 */
 		}
-	else if(modSpec.IsAminoAcid()==false){
+	else if(modSpec->IsAminoAcid()==false){
 /*		char temp[100];
 		int oprec = 4;
 		sprintf(temp," r %.*f %.*f %.*f %.*f %.*f", oprec, mod->Rates(0), oprec, mod->Rates(1), oprec, mod->Rates(2), oprec, mod->Rates(3), oprec, mod->Rates(4));
 		outman.UserMessage("%s", temp);
 */		for(i=0;i < 5;i++){
 			bool skip = false;
-			if(modSpec.IsArbitraryRateMatrix()){
+			if(modSpec->IsArbitraryRateMatrix()){
 				if(mod->GetArbitraryRateMatrixIndeces()[i] == mod->GetArbitraryRateMatrixIndeces()[5]) skip = true;
 				}
 			if(!skip){
 				double curVal = mod->Rates(i);
-				rateImprove += OptimizeBoundedParameter(prec, curVal, i, 
+				rateImprove += OptimizeBoundedParameter(modnum, prec, curVal, i, 
 					max(min(1.0e-3, curVal), curVal / maxChangeProportion),
 					min(max(999.0, curVal), curVal * maxChangeProportion),
 					&Model::SetRelativeNucRate, scoreDiffTarget);
 				}
 			}
 		}
-	else{
-
-#ifdef DEBUG_MESSAGES
-/*
-		string s;
-		mod->FillModelOrHeaderStringForTable(s, true);
-		ofstream tab("valTable.log", ios::app);
-		tab << lnL << "\t" << s.c_str() << "\t" << endl;
-		tab.close();
-*/
-#endif
-	
-		list<int> reopt;
-#ifdef SUM_AA_REL_RATES
-		mod->NormalizeSumConstrainedRelativeRates(true, -1);
-		for(i=0;i < mod->NumRelRates();i++)
-			reopt.push_back(i);
-#else
-		for(i=0;i < mod->NumRelRates()-1;i++)
-			reopt.push_back(i);
-#endif
-		int pass = 0;
-		while(reopt.size() != 0 && pass < 5){
-			double beflnL = lnL;
-			list<int>::iterator it = reopt.begin();
-			int num = reopt.size();
-			while(it != reopt.end()){
-				double beflnL = lnL;
-				double befval = mod->Rates(*it);
-#ifdef SUM_AA_REL_RATES
-				FLOAT_TYPE minV = max(MIN_REL_RATE, befval / maxChangeProportion);
-				if(minV < SUM_TO * 1.0e-3/190.0){
-					minV = min(befval, MIN_REL_RATE);
-					}
-				FLOAT_TYPE maxV = min(MAX_REL_RATE, befval * maxChangeProportion);
-				if(maxV < SUM_TO * 1.0e-3/190.0)
-					maxV = SUM_TO * 1.0e-3/190.0;
-				rateImprove += OptimizeBoundedParameter(prec, befval, *it, 
-					minV, maxV,
-					&Model::SetSumConstrainedRelativeRate, scoreDiffTarget);
-#else
-				FLOAT_TYPE minV = max(min(1.0e-3, befval), befval / maxChangeProportion);
-				if(minV < 0.01)
-					minV = min(befval, 1.0e-3);
-				FLOAT_TYPE maxV = min(max(9999.0, befval), befval * maxChangeProportion);
-				if(maxV < 0.01)
-					maxV = 0.01;
-				rateImprove += OptimizeBoundedParameter(prec, befval, *it, 
-					minV, maxV,
-					&Model::SetRelativeNucRate, scoreDiffTarget);
-#endif
-				if(FloatingPointEquals(lnL, beflnL, 1e-8)){
-					list<int>::iterator del=it;
-					it++;
-					reopt.erase(del);
-					}
-				else it++;				
-				}
-			pass++;
-			outman.DebugMessage("reoptimized %d. improvement %.6f", num, lnL - beflnL);
-#ifdef DEBUG_MESSAGES
-			/*
-			string s;
-			mod->FillModelOrHeaderStringForTable(s, true);
-			ofstream tab("valTable.log", ios::app);
-			tab << lnL << "\t" << s.c_str() << endl;
-			tab.close();
-			*/
-#endif
-			}
-		}
 	return rateImprove;
 	}
 
-FLOAT_TYPE Tree::OptimizeFlexRates(FLOAT_TYPE prec){
+FLOAT_TYPE Tree::OptimizeFlexRates(FLOAT_TYPE prec, int modnum){
 	FLOAT_TYPE flexImprove=ZERO_POINT_ZERO;
 	FLOAT_TYPE minVal = 1.0e-5;
 	int i=0;
 
+	//PARTITION
+	Model *mod = modPart->GetModel(modnum);
+
 	//limiting change in any one pass
-	double maxRateChangeProp = 1.5;
-	double maxProbChange = 0.10;
-	double curVal;
+	double maxRateChangeProp = 0.75;
+	double maxProbChange = 0.20;
+	
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexRate(i), i, 
+		max(minVal, mod->FlexRate(i)*maxRateChangeProp),
+		min(mod->FlexRate(i+1), mod->FlexRate(i)+mod->FlexRate(i)*maxRateChangeProp),  modnum,
+		&Model::SetFlexRate);
 
-	//very tight increments really seems to help flex optimization
-	FLOAT_TYPE scoreDiffTarget;
-#ifdef SINGLE_PRECISION_FLOATS
-	scoreDiffTarget = 5.0;
-#else
-	scoreDiffTarget = 10.0;
-#endif
-
-#ifdef DEBUG_FLEX_OPT
-	outman.UserMessage("%.4f", lnL);
-	for(int j=0;j<mod->NRateCats();j++)
-		outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
-
-	//the EffectiveXXXFlexBound functions here just give the values at
-	//which the rate currently being optimized would cross the one above
-	//or below it due to rescaling of the rates to keep the mean rate 1.0
-
-	curVal = mod->FlexRate(i);
-	flexImprove += OptimizeBoundedParameter(prec, curVal, i,
-		max(min(minVal, curVal), curVal / maxRateChangeProp),
-		min(mod->EffectiveUpperFlexBound(i), curVal * maxRateChangeProp),
-		&Model::SetFlexRate, scoreDiffTarget);
-
-#ifdef DEBUG_FLEX_OPT
-	outman.UserMessage("%.4f", lnL);
-	for(int j=0;j<mod->NRateCats();j++)
-		outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
-
-	curVal = mod->FlexProb(i);
-	flexImprove += OptimizeBoundedParameter(prec, curVal, i,
-		max(min(minVal, curVal), curVal-maxProbChange),
-		min((ONE_POINT_ZERO - (minVal * (FLOAT_TYPE)(mod->NRateCats() - 1))), curVal + maxProbChange),
-		&Model::SetFlexProb, scoreDiffTarget);
-
-#ifdef DEBUG_FLEX_OPT
-	outman.UserMessage("%.4f", lnL);
-	for(int j=0;j<mod->NRateCats();j++)
-		outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
-
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexProb(i), i, 
+		max(minVal, mod->FlexProb(i)-maxProbChange), 
+		min(ONE_POINT_ZERO, mod->FlexProb(i)+maxProbChange), modnum,
+		&Model::SetFlexProb);
 	for(i=1;i < mod->NRateCats()-1;i++){
-
-		curVal = mod->FlexRate(i);
-		flexImprove += OptimizeBoundedParameter(prec, curVal, i,
-			max(mod->EffectiveLowerFlexBound(i), curVal / maxRateChangeProp),
-			min(mod->EffectiveUpperFlexBound(i), curVal * maxRateChangeProp),
-			&Model::SetFlexRate, scoreDiffTarget);
-
-#ifdef DEBUG_FLEX_OPT
-		outman.UserMessage("%.4f", lnL);
-		for(int j=0;j<mod->NRateCats();j++)
-			outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
-
-		curVal = mod->FlexProb(i);
-		flexImprove += OptimizeBoundedParameter(prec, curVal, i,
-			max(min(minVal, curVal), curVal-maxProbChange),
-			min((ONE_POINT_ZERO - (minVal * (FLOAT_TYPE)(mod->NRateCats() - 1))), curVal + maxProbChange),
-			&Model::SetFlexProb, scoreDiffTarget);
-
-#ifdef DEBUG_FLEX_OPT
-		outman.UserMessage("%.4f", lnL);
-		for(int j=0;j<mod->NRateCats();j++)
-			outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
+		flexImprove += OptimizeBoundedParameter(prec, mod->FlexRate(i), i, 
+			max(mod->FlexRate(i-1), mod->FlexRate(i)*maxRateChangeProp), 
+			min(mod->FlexRate(i+1), mod->FlexRate(i)+mod->FlexRate(i)*maxRateChangeProp), modnum,
+			&Model::SetFlexRate);
+		flexImprove += OptimizeBoundedParameter(prec, mod->FlexProb(i), i, 
+			max(minVal, mod->FlexProb(i)-maxProbChange), 
+			min(ONE_POINT_ZERO, mod->FlexProb(i)+maxProbChange), modnum,
+			&Model::SetFlexProb);
 		}
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexRate(i), i, 
+		max(mod->FlexRate(i-1), mod->FlexRate(i)*maxRateChangeProp),
+		min(999.9, mod->FlexRate(i)+mod->FlexRate(i)*maxRateChangeProp), modnum,
+		&Model::SetFlexRate);
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexProb(i), i, 
+		max(minVal, mod->FlexProb(i)-maxProbChange), 
+		min(ONE_POINT_ZERO, mod->FlexProb(i)+maxProbChange), modnum,
+		&Model::SetFlexProb);
 
-	curVal = mod->FlexRate(i);
-	flexImprove += OptimizeBoundedParameter(prec, curVal, i,
-		max(mod->EffectiveLowerFlexBound(i), curVal / maxRateChangeProp),
-		min(max(curVal, 999.9), curVal * maxRateChangeProp),
-		&Model::SetFlexRate, scoreDiffTarget);
 
-#ifdef DEBUG_FLEX_OPT
-	outman.UserMessage("%.4f", lnL);
-	for(int j=0;j<mod->NRateCats();j++)
-		outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
+/*
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexRate(i), i, minVal, mod->FlexRate(i+1), &Model::SetFlexRate);
 
-	curVal = mod->FlexProb(i);
-	flexImprove += OptimizeBoundedParameter(prec, curVal, i,
-		max(min(minVal, curVal), curVal-maxProbChange),
-		min((ONE_POINT_ZERO - (minVal * (FLOAT_TYPE)(mod->NRateCats() - 1))), curVal + maxProbChange),
-		&Model::SetFlexProb, scoreDiffTarget);
-
-#ifdef DEBUG_FLEX_OPT
-	outman.UserMessage("%.4f", lnL);
-	for(int j=0;j<mod->NRateCats();j++)
-		outman.UserMessage("%f\t%f", mod->FlexRate(j), mod->FlexProb(j));
-#endif
-
+//		for(int j=0;j<mod->NRateCats();j++)
+//			cout << mod->FlexRate(j) << "\t" << mod->FlexProb(j) << endl;
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexProb(i), i, minVal, ONE_POINT_ZERO, &Model::SetFlexProb);
+//		for(int j=0;j<mod->NRateCats();j++)
+//			cout << mod->FlexRate(j) << "\t" << mod->FlexProb(j) << endl;
+	for(i=1;i < mod->NRateCats()-1;i++){
+		flexImprove += OptimizeBoundedParameter(prec, mod->FlexRate(i), i, mod->FlexRate(i-1), mod->FlexRate(i+1), &Model::SetFlexRate);
+//			for(int j=0;j<mod->NRateCats();j++)
+//				cout << mod->FlexRate(j) << "\t" << mod->FlexProb(j) << endl;
+		flexImprove += OptimizeBoundedParameter(prec, mod->FlexProb(i), i, minVal, ONE_POINT_ZERO, &Model::SetFlexProb);
+//			for(int j=0;j<mod->NRateCats();j++)
+//				cout << mod->FlexRate(j) << "\t" << mod->FlexProb(j) << endl;
+		}
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexRate(i), i, mod->FlexRate(i-1), 9999.9, &Model::SetFlexRate);
+//		for(int j=0;j<mod->NRateCats();j++)
+//			cout << mod->FlexRate(j) << "\t" << mod->FlexProb(j) << endl;
+	flexImprove += OptimizeBoundedParameter(prec, mod->FlexProb(i), i, minVal, ONE_POINT_ZERO, &Model::SetFlexProb);
+//		for(int j=0;j<mod->NRateCats();j++)
+//			cout << mod->FlexRate(j) << "\t" << mod->FlexProb(j) << endl;
+*/	
 	return flexImprove;
 	}
 
-void Tree::CalcFullCLAInternalInternalEQUIV(CondLikeArray *destCLA, const CondLikeArray *LCLA, const CondLikeArray *RCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, const char *leftEQ, const char *rightEQ){
+FLOAT_TYPE Tree::OptimizeSubsetRates(FLOAT_TYPE prec){
+	FLOAT_TYPE subrateImprove=ZERO_POINT_ZERO;
+	FLOAT_TYPE minVal = 1.0e-5;
+	int i=0;
+
+	//DEBUG
+	//store the current values in case we end up making the lnL worse
+	Score();
+	FLOAT_TYPE start = lnL;
+	vector<FLOAT_TYPE> initVals;
+	for(int i = 0;i < modPart->NumSubsetRates();i++)
+		initVals.push_back(modPart->SubsetRate(i));
+
+	//limiting change in any one pass
+	double maxRateChangeProp = 0.9;
+	for(i=0;i < modPart->NumSubsetRates();i++){
+		subrateImprove += OptimizeBoundedParameter<ModelPartition>(prec, modPart->SubsetRate(i), i, 
+			max(minVal, modPart->SubsetRate(i)*maxRateChangeProp),
+			modPart->SubsetRate(i) / maxRateChangeProp,
+			modPart,
+			&ModelPartition::SetSubsetRate);
+		}
+
+	Score();
+	FLOAT_TYPE after = lnL;
+	//if the optimization made things at all worse we'll revert to the old values,
+	//but not complain about it unless it is a meaningful difference
+	if(after < start){
+		if(!FloatingPointEquals(after, start, 1.0e-3))
+			outman.DebugMessage("##NOTE: SUBSET RATE OPT WORSENED SCORE##");
+		modPart->SetSubsetRates(initVals);
+		MakeAllNodesDirty();
+		Score();
+		after = lnL;
+		assert(FloatingPointEquals(after, start, 1e-6));
+		subrateImprove = ZERO_POINT_ZERO;
+		}
+
+	assert(after - start + 1e-6> 0.0);
+	return subrateImprove;
+	}
+
+void Tree::CalcFullCLAInternalInternalEQUIV(CondLikeArray *destCLA, const CondLikeArray *LCLA, const CondLikeArray *RCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, const char *leftEQ, const char *rightEQ, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
@@ -6639,16 +6349,19 @@ void Tree::CalcFullCLAInternalInternalEQUIV(CondLikeArray *destCLA, const CondLi
 	const FLOAT_TYPE *RCL=RCLA->arr;
 	FLOAT_TYPE L1, L2, L3, L4, R1, R2, R3, R4;
 
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
+
 	const int nRateCats = mod->NRateCats();
 	const int nchar = data->NChar();
 	assert(nRateCats == 1);
-
+	
 #ifdef UNIX
 	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 	madvise((void *)LCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 	madvise((void *)RCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
-
+	
 	for(int i=0;i<nchar;i++) {
 		if(leftEQ[i] == false){
 			L1=( Lpr[0]*LCL[0]+Lpr[1]*LCL[1]+Lpr[2]*LCL[2]+Lpr[3]*LCL[3]);
@@ -6660,7 +6373,7 @@ void Tree::CalcFullCLAInternalInternalEQUIV(CondLikeArray *destCLA, const CondLi
 		if(rightEQ[i] == false){
 			R1=(Rpr[0]*RCL[0]+Rpr[1]*RCL[1]+Rpr[2]*RCL[2]+Rpr[3]*RCL[3]);
 			R2=(Rpr[4]*RCL[0]+Rpr[5]*RCL[1]+Rpr[6]*RCL[2]+Rpr[7]*RCL[3]);
-			R3=(Rpr[8]*RCL[0]+Rpr[9]*RCL[1]+Rpr[10]*RCL[2]+Rpr[11]*RCL[3]);
+			R3=(Rpr[8]*RCL[0]+Rpr[9]*RCL[1]+Rpr[10]*RCL[2]+Rpr[11]*RCL[3]);			
 			R4=(Rpr[12]*RCL[0]+Rpr[13]*RCL[1]+Rpr[14]*RCL[2]+Rpr[15]*RCL[3]);
 			}
 
@@ -6679,14 +6392,14 @@ void Tree::CalcFullCLAInternalInternalEQUIV(CondLikeArray *destCLA, const CondLi
 	const int *left_mult=LCLA->underflow_mult;
 	const int *right_mult=RCLA->underflow_mult;
 	int *undermult=destCLA->underflow_mult;
-
+	
 	for(int i=0;i<nchar;i++){
 		undermult[i] = left_mult[i] + right_mult[i];
 		}
 	destCLA->rescaleRank = 2 + LCLA->rescaleRank + RCLA->rescaleRank;
 	}
 
-void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArray *LCLA, const CondLikeArray *RCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr){
+void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArray *LCLA, const CondLikeArray *RCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
@@ -6694,29 +6407,26 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 	const FLOAT_TYPE *RCL=RCLA->arr;
 	FLOAT_TYPE L1, L2, L3, L4, R1, R2, R3, R4;
 
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
+
 	const int nRateCats = mod->NRateCats();
 	const int nchar = data->NChar();
 	const int *counts = data->GetCounts();
-
-#ifdef CUDA_GPU
-	if (cudaman->GetGPUCLAEnabled()) {
-		cudaman->ComputeGPUCLA(Lpr, Rpr, LCL, RCL, dest);
-	} else {
-#endif
 
 #ifdef UNIX
 	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 	madvise((void *)LCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 	madvise((void *)RCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
-
+	
 	if(nRateCats == 4){//the unrolled 4 rate version
 #ifdef OMP_INTINTCLA
 		#pragma omp parallel for private(dest, LCL, RCL, L1, L2, L3, L4, R1, R2, R3, R4)
 		for(int i=0;i<nchar;i++){
 			int index=4*4*i;
 			dest = &(destCLA->arr[index]);
-			LCL = &(LCLA->arr[index]);
+			LCL = &(LCLA->arr[index]); 
 			RCL= &(RCLA->arr[index]);
 #else
 		for(int i=0;i<nchar;i++){
@@ -6733,7 +6443,7 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 
 				R1=((Rpr[0]*RCL[0])+(Rpr[1]*RCL[1]))+((Rpr[2]*RCL[2])+(Rpr[3]*RCL[3]));
 				R2=((Rpr[4]*RCL[0])+(Rpr[5]*RCL[1]))+((Rpr[6]*RCL[2])+(Rpr[7]*RCL[3]));
-				R3=((Rpr[8]*RCL[0])+(Rpr[9]*RCL[1]))+((Rpr[10]*RCL[2])+(Rpr[11]*RCL[3]));
+				R3=((Rpr[8]*RCL[0])+(Rpr[9]*RCL[1]))+((Rpr[10]*RCL[2])+(Rpr[11]*RCL[3]));			
 				R4=((Rpr[12]*RCL[0])+(Rpr[13]*RCL[1]))+((Rpr[14]*RCL[2])+(Rpr[15]*RCL[3]));
 
 				dest[0] = L1 * R1;
@@ -6752,7 +6462,7 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 
 				R1=(Rpr[16+0]*RCL[0]+Rpr[16+1]*RCL[1])+(Rpr[16+2]*RCL[2]+Rpr[16+3]*RCL[3]);
 				R2=(Rpr[16+4]*RCL[0]+Rpr[16+5]*RCL[1])+(Rpr[16+6]*RCL[2]+Rpr[16+7]*RCL[3]);
-				R3=(Rpr[16+8]*RCL[0]+Rpr[16+9]*RCL[1])+(Rpr[16+10]*RCL[2]+Rpr[16+11]*RCL[3]);
+				R3=(Rpr[16+8]*RCL[0]+Rpr[16+9]*RCL[1])+(Rpr[16+10]*RCL[2]+Rpr[16+11]*RCL[3]);			
 				R4=(Rpr[16+12]*RCL[0]+Rpr[16+13]*RCL[1])+(Rpr[16+14]*RCL[2]+Rpr[16+15]*RCL[3]);
 
 				dest[0] = L1 * R1;
@@ -6771,7 +6481,7 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 
 				R1=(Rpr[32+0]*RCL[0]+Rpr[32+1]*RCL[1])+(Rpr[32+2]*RCL[2]+Rpr[32+3]*RCL[3]);
 				R2=(Rpr[32+4]*RCL[0]+Rpr[32+5]*RCL[1])+(Rpr[32+6]*RCL[2]+Rpr[32+7]*RCL[3]);
-				R3=(Rpr[32+8]*RCL[0]+Rpr[32+9]*RCL[1])+(Rpr[32+10]*RCL[2]+Rpr[32+11]*RCL[3]);
+				R3=(Rpr[32+8]*RCL[0]+Rpr[32+9]*RCL[1])+(Rpr[32+10]*RCL[2]+Rpr[32+11]*RCL[3]);			
 				R4=(Rpr[32+12]*RCL[0]+Rpr[32+13]*RCL[1])+(Rpr[32+14]*RCL[2]+Rpr[32+15]*RCL[3]);
 
 				dest[0] = L1 * R1;
@@ -6790,7 +6500,7 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 
 				R1=(Rpr[48+0]*RCL[0]+Rpr[48+1]*RCL[1])+(Rpr[48+2]*RCL[2]+Rpr[48+3]*RCL[3]);
 				R2=(Rpr[48+4]*RCL[0]+Rpr[48+5]*RCL[1])+(Rpr[48+6]*RCL[2]+Rpr[48+7]*RCL[3]);
-				R3=(Rpr[48+8]*RCL[0]+Rpr[48+9]*RCL[1])+(Rpr[48+10]*RCL[2]+Rpr[48+11]*RCL[3]);
+				R3=(Rpr[48+8]*RCL[0]+Rpr[48+9]*RCL[1])+(Rpr[48+10]*RCL[2]+Rpr[48+11]*RCL[3]);			
 				R4=(Rpr[48+12]*RCL[0]+Rpr[48+13]*RCL[1])+(Rpr[48+14]*RCL[2]+Rpr[48+15]*RCL[3]);
 
 				dest[0] = L1 * R1;
@@ -6817,9 +6527,9 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 		for(int i=0;i<nchar;i++) {
 			index=4*nRateCats*i;
 			dest = &(destCLA->arr[index]);
-			LCL = &(LCLA->arr[index]);
+			LCL = &(LCLA->arr[index]); 
 			RCL= &(RCLA->arr[index]);
-#else
+#else			
 		for(int i=0;i<nchar;i++) {
 #endif
 #ifdef USE_COUNTS_IN_BOOT
@@ -6835,7 +6545,7 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 
 					R1=(Rpr[16*r+0]*RCL[0]+Rpr[16*r+1]*RCL[1]+Rpr[16*r+2]*RCL[2]+Rpr[16*r+3]*RCL[3]);
 					R2=(Rpr[16*r+4]*RCL[0]+Rpr[16*r+5]*RCL[1]+Rpr[16*r+6]*RCL[2]+Rpr[16*r+7]*RCL[3]);
-					R3=(Rpr[16*r+8]*RCL[0]+Rpr[16*r+9]*RCL[1]+Rpr[16*r+10]*RCL[2]+Rpr[16*r+11]*RCL[3]);
+					R3=(Rpr[16*r+8]*RCL[0]+Rpr[16*r+9]*RCL[1]+Rpr[16*r+10]*RCL[2]+Rpr[16*r+11]*RCL[3]);			
 					R4=(Rpr[16*r+12]*RCL[0]+Rpr[16*r+13]*RCL[1]+Rpr[16*r+14]*RCL[2]+Rpr[16*r+15]*RCL[3]);
 
 					dest[0] = L1 * R1;
@@ -6846,7 +6556,7 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 					dest+=4;
 					LCL+=4;
 					RCL+=4;
-					}
+					}			
 #ifdef ALLOW_SINGLE_SITE
 				if(siteToScore > -1) break;
 #endif
@@ -6854,38 +6564,31 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 			}
 		}
 
-#ifdef CUDA_GPU
-	}
-#endif
-
 	const int *left_mult=LCLA->underflow_mult;
 	const int *right_mult=RCLA->underflow_mult;
 	int *undermult=destCLA->underflow_mult;
-
+	
 	for(int i=0;i<nchar;i++){
 		undermult[i] = left_mult[i] + right_mult[i];
 		}
 	destCLA->rescaleRank = 2 + LCLA->rescaleRank + RCLA->rescaleRank;
 	}
 
-void Tree::CalcFullCLAInternalInternalNState(CondLikeArray *destCLA, const CondLikeArray *LCLA, const CondLikeArray *RCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr){
+void Tree::CalcFullCLAInternalInternalNState(CondLikeArray *destCLA, const CondLikeArray *LCLA, const CondLikeArray *RCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
 	const FLOAT_TYPE *LCL=LCLA->arr;
 	const FLOAT_TYPE *RCL=RCLA->arr;
 	FLOAT_TYPE L1, R1;
+	
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nRateCats = mod->NRateCats();
 	const int nstates = mod->NStates();
 	const int nchar = data->NChar();
 	const int *counts = data->GetCounts();
-
-#ifdef CUDA_GPU
-	if (cudaman->GetGPUCLAEnabled()) {
-		cudaman->ComputeGPUCLA(Lpr, Rpr, LCL, RCL, dest);
-	} else {
-#endif
 
 #ifdef UNIX
 	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
@@ -6897,7 +6600,7 @@ void Tree::CalcFullCLAInternalInternalNState(CondLikeArray *destCLA, const CondL
 	#pragma omp parallel for private(dest, LCL, RCL, L1, R1)
 	for(int i=0;i<nchar;i++){
 		dest = &(destCLA->arr[nRateCats * nstates * i]);
-		LCL = &(LCLA->arr[nRateCats * nstates * i]);
+		LCL = &(LCLA->arr[nRateCats * nstates * i]); 
 		RCL= &(RCLA->arr[nRateCats * nstates * i]);
 
 #else
@@ -6930,24 +6633,23 @@ void Tree::CalcFullCLAInternalInternalNState(CondLikeArray *destCLA, const CondL
 			}
 		}
 
-#ifdef CUDA_GPU
-	}
-#endif
-
 	const int *left_mult=LCLA->underflow_mult;
 	const int *right_mult=RCLA->underflow_mult;
 	int *undermult=destCLA->underflow_mult;
-
+	
 	for(int i=0;i<nchar;i++){
 		undermult[i] = left_mult[i] + right_mult[i];
 		}
 	destCLA->rescaleRank = 2 + LCLA->rescaleRank + RCLA->rescaleRank;
 	}
 
-void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, const char *Ldata, const char *Rdata){
+void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, const char *Ldata, const char *Rdata, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nRateCats = mod->NRateCats();
 	const int nchar = data->NChar();
@@ -6980,12 +6682,12 @@ void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE 
 				Ldata++;
 				Rdata++;
 				}
-
+				
 			else if((*Ldata == -4 && *Rdata == -4) || (*Ldata == -4 && *Rdata > -1) || (*Rdata == -4 && *Ldata > -1)){//total ambiguity of left, right or both
-
+				
 				if(*Ldata == -4 && *Rdata == -4) //total ambiguity of both
 					for(int i=0;i< (4*nRateCats);i++) *(dest++) = ONE_POINT_ZERO;
-
+				
 				else if(*Ldata == -4){//total ambiguity of left
 					for(int i=0;i<nRateCats;i++){
 						*(dest++) = Rpr[(*Rdata)+16*i];
@@ -7006,7 +6708,7 @@ void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE 
 					}
 				Ldata++;
 				Rdata++;
-				}
+				}	
 			else {//partial ambiguity of left, right or both
 				if(*Ldata>-1){//unambiguous left
 					for(int i=0;i<nRateCats;i++){
@@ -7025,7 +6727,7 @@ void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE 
 							}
 						Ldata++;
 						}
-
+				 
 					else{//partially ambiguous left
 						int nstates=-*(Ldata++);
 						for(int q=0;q< (4*nRateCats);q++) dest[q]=0;
@@ -7047,12 +6749,12 @@ void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE 
 						*(dest++) *= Rpr[(*Rdata+8)+16*i];
 						*(dest++) *= Rpr[(*Rdata+12)+16*i];
 						}
-					Rdata++;
+					Rdata++;		
 					}
 				else if(*Rdata != -4){//partially ambiguous right
 					char nstates=-1 * *(Rdata++);
-					//create a temporary cla to hold the results from the ambiguity of the right,
-					//which need to be +'s
+					//create a temporary cla to hold the results from the ambiguity of the right, 
+					//which need to be +'s 
 					//FLOAT_TYPE *tempcla=new FLOAT_TYPE[4*nRateCats];
 					vector<FLOAT_TYPE> tempcla(4*nRateCats);
 					for(int i=0;i<nstates;i++){
@@ -7104,17 +6806,20 @@ void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE 
 				}
 			}
 		}
-
+		
 		for(int site=0;site<nchar;site++){
 			destCLA->underflow_mult[site]=0;
 			}
 		destCLA->rescaleRank=2;
 	}
 
-void Tree::CalcFullCLATerminalTerminalNState(CondLikeArray *destCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, const char *Ldata, const char *Rdata){
+void Tree::CalcFullCLATerminalTerminalNState(CondLikeArray *destCLA, const FLOAT_TYPE *Lpr, const FLOAT_TYPE *Rpr, const char *Ldata, const char *Rdata, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nRateCats = mod->NRateCats();
 	const int nstates = mod->NStates();
@@ -7138,25 +6843,25 @@ void Tree::CalcFullCLATerminalTerminalNState(CondLikeArray *destCLA, const FLOAT
 			if(*Ldata < nstates && *Rdata < nstates){
 				for(int rate=0;rate<nRateCats;rate++){
 					for(int from=0;from<nstates;from++){
-						dest[rate*nstates + from] = Lpr[(*Ldata) + from*nstates + rate*nstates*nstates] * Rpr[(*Rdata) + from*nstates + rate*nstates*nstates];
+						dest[rate*nstates + from] = Lpr[(*Ldata) + from*nstates + rate*nstates*nstates] * Rpr[(*Rdata) + from*nstates + rate*nstates*nstates];	
 						}
 					}
 				Ldata++;
 				Rdata++;
 				}
-
+				
 			else{//total ambiguity of left, right or both
-
+				
 				if(*Ldata == nstates && *Rdata == nstates) //total ambiguity of both
 					for(int rate=0;rate<nRateCats;rate++)
 						for(int from=0;from<nstates;from++)
 							dest[rate*nstates + from] = ONE_POINT_ZERO;
-
+				
 				else if(*Ldata == nstates){//total ambiguity of left
 					for(int rate=0;rate<nRateCats;rate++)
 						for(int from=0;from<nstates;from++)
 							dest[rate*nstates + from] = Rpr[(*Rdata) + from*nstates + rate*nstates*nstates];
-
+						
 					}
 				else{//total ambiguity of right
 					for(int rate=0;rate<nRateCats;rate++)
@@ -7189,7 +6894,7 @@ void Tree::CalcFullCLATerminalTerminalNState(CondLikeArray *destCLA, const FLOAT
 	}
 
 
-void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pr1, const FLOAT_TYPE *pr2, char *dat2, const unsigned *ambigMap){
+void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pr1, const FLOAT_TYPE *pr2, char *dat2, const unsigned *ambigMap, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *des=destCLA->arr;
@@ -7198,13 +6903,16 @@ void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArr
 	const FLOAT_TYPE *CL1=CL;
 	const char *data2=dat2;
 
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);	
+
 	const int nchar = data->NChar();
 	const int nRateCats = mod->NRateCats();
 	const int *counts = data->GetCounts();
 
-#ifdef UNIX
+#ifdef UNIX	
 	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);	
 #endif
 
 #ifdef ALLOW_SINGLE_SITE
@@ -7231,17 +6939,17 @@ void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArr
 					dest[1] = ((pr1[4]*CL1[0]+pr1[5]*CL1[1])+(pr1[6]*CL1[2]+pr1[7]*CL1[3])) * pr2[*data2+4];
 					dest[2] = ((pr1[8]*CL1[0]+pr1[9]*CL1[1])+(pr1[10]*CL1[2]+pr1[11]*CL1[3])) * pr2[*data2+8];
 					dest[3] = ((pr1[12]*CL1[0]+pr1[13]*CL1[1])+(pr1[14]*CL1[2]+pr1[15]*CL1[3])) * pr2[*data2+12];
-
+					
 					dest[4] = ((pr1[16]*CL1[4]+pr1[17]*CL1[5])+(pr1[18]*CL1[6]+pr1[19]*CL1[7])) * pr2[*data2+16];
 					dest[5] = ((pr1[20]*CL1[4]+pr1[21]*CL1[5])+(pr1[22]*CL1[6]+pr1[23]*CL1[7])) * pr2[*data2+4+16];
 					dest[6] = ((pr1[24]*CL1[4]+pr1[25]*CL1[5])+(pr1[26]*CL1[6]+pr1[27]*CL1[7])) * pr2[*data2+8+16];
 					dest[7] = ((pr1[28]*CL1[4]+pr1[29]*CL1[5])+(pr1[30]*CL1[6]+pr1[31]*CL1[7])) * pr2[*data2+12+16];
-
+				
 					dest[8] = ((pr1[32]*CL1[8]+pr1[33]*CL1[9])+(pr1[34]*CL1[10]+pr1[35]*CL1[11])) * pr2[*data2+32];
 					dest[9] = ((pr1[36]*CL1[8]+pr1[37]*CL1[9])+(pr1[38]*CL1[10]+pr1[39]*CL1[11])) * pr2[*data2+4+32];
 					dest[10] = ((pr1[40]*CL1[8]+pr1[41]*CL1[9])+(pr1[42]*CL1[10]+pr1[43]*CL1[11])) * pr2[*data2+8+32];
 					dest[11] = ((pr1[44]*CL1[8]+pr1[45]*CL1[9])+(pr1[46]*CL1[10]+pr1[47]*CL1[11])) * pr2[*data2+12+32];
-
+				
 					dest[12] = ((pr1[48]*CL1[12]+pr1[49]*CL1[13])+(pr1[50]*CL1[14]+pr1[51]*CL1[15])) * pr2[*data2+48];
 					dest[13] = ((pr1[52]*CL1[12]+pr1[53]*CL1[13])+(pr1[54]*CL1[14]+pr1[55]*CL1[15])) * pr2[*data2+4+48];
 					dest[14] = ((pr1[56]*CL1[12]+pr1[57]*CL1[13])+(pr1[58]*CL1[14]+pr1[59]*CL1[15])) * pr2[*data2+8+48];
@@ -7255,17 +6963,17 @@ void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArr
 					dest[1] = ( pr1[4]*CL1[0]+pr1[5]*CL1[1]+pr1[6]*CL1[2]+pr1[7]*CL1[3]);
 					dest[2] = ( pr1[8]*CL1[0]+pr1[9]*CL1[1]+pr1[10]*CL1[2]+pr1[11]*CL1[3]);
 					dest[3] = ( pr1[12]*CL1[0]+pr1[13]*CL1[1]+pr1[14]*CL1[2]+pr1[15]*CL1[3]);
-
+					
 					dest[4] = ( pr1[16]*CL1[4]+pr1[17]*CL1[5]+pr1[18]*CL1[6]+pr1[19]*CL1[7]);
 					dest[5] = ( pr1[20]*CL1[4]+pr1[21]*CL1[5]+pr1[22]*CL1[6]+pr1[23]*CL1[7]);
 					dest[6] = ( pr1[24]*CL1[4]+pr1[25]*CL1[5]+pr1[26]*CL1[6]+pr1[27]*CL1[7]);
 					dest[7] = ( pr1[28]*CL1[4]+pr1[29]*CL1[5]+pr1[30]*CL1[6]+pr1[31]*CL1[7]);
-
+				
 					dest[8] = ( pr1[32]*CL1[8]+pr1[33]*CL1[9]+pr1[34]*CL1[10]+pr1[35]*CL1[11]);
 					dest[9] = ( pr1[36]*CL1[8]+pr1[37]*CL1[9]+pr1[38]*CL1[10]+pr1[39]*CL1[11]);
 					dest[10] = ( pr1[40]*CL1[8]+pr1[41]*CL1[9]+pr1[42]*CL1[10]+pr1[43]*CL1[11]);
 					dest[11] = ( pr1[44]*CL1[8]+pr1[45]*CL1[9]+pr1[46]*CL1[10]+pr1[47]*CL1[11]);
-
+				
 					dest[12] = ( pr1[48]*CL1[12]+pr1[49]*CL1[13]+pr1[50]*CL1[14]+pr1[51]*CL1[15]);
 					dest[13] = ( pr1[52]*CL1[12]+pr1[53]*CL1[13]+pr1[54]*CL1[14]+pr1[55]*CL1[15]);
 					dest[14] = ( pr1[56]*CL1[12]+pr1[57]*CL1[13]+pr1[58]*CL1[14]+pr1[59]*CL1[15]);
@@ -7287,23 +6995,23 @@ void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArr
 							}
 						data2++;
 						}
-
+					
 					//now add the internal child
 					*(dest++) *= ( pr1[0]*CL1[0]+pr1[1]*CL1[1]+pr1[2]*CL1[2]+pr1[3]*CL1[3]);
 					*(dest++) *= ( pr1[4]*CL1[0]+pr1[5]*CL1[1]+pr1[6]*CL1[2]+pr1[7]*CL1[3]);
 					*(dest++) *= ( pr1[8]*CL1[0]+pr1[9]*CL1[1]+pr1[10]*CL1[2]+pr1[11]*CL1[3]);
 					*(dest++) *= ( pr1[12]*CL1[0]+pr1[13]*CL1[1]+pr1[14]*CL1[2]+pr1[15]*CL1[3]);
-
+					
 					*(dest++) *= ( pr1[16]*CL1[4]+pr1[17]*CL1[5]+pr1[18]*CL1[6]+pr1[19]*CL1[7]);
 					*(dest++) *= ( pr1[20]*CL1[4]+pr1[21]*CL1[5]+pr1[22]*CL1[6]+pr1[23]*CL1[7]);
 					*(dest++) *= ( pr1[24]*CL1[4]+pr1[25]*CL1[5]+pr1[26]*CL1[6]+pr1[27]*CL1[7]);
 					*(dest++) *= ( pr1[28]*CL1[4]+pr1[29]*CL1[5]+pr1[30]*CL1[6]+pr1[31]*CL1[7]);
-
+				
 					*(dest++) *= ( pr1[32]*CL1[8]+pr1[33]*CL1[9]+pr1[34]*CL1[10]+pr1[35]*CL1[11]);
 					*(dest++) *= ( pr1[36]*CL1[8]+pr1[37]*CL1[9]+pr1[38]*CL1[10]+pr1[39]*CL1[11]);
 					*(dest++) *= ( pr1[40]*CL1[8]+pr1[41]*CL1[9]+pr1[42]*CL1[10]+pr1[43]*CL1[11]);
 					*(dest++) *= ( pr1[44]*CL1[8]+pr1[45]*CL1[9]+pr1[46]*CL1[10]+pr1[47]*CL1[11]);
-
+				
 					*(dest++) *= ( pr1[48]*CL1[12]+pr1[49]*CL1[13]+pr1[50]*CL1[14]+pr1[51]*CL1[15]);
 					*(dest++) *= ( pr1[52]*CL1[12]+pr1[53]*CL1[13]+pr1[54]*CL1[14]+pr1[55]*CL1[15]);
 					*(dest++) *= ( pr1[56]*CL1[12]+pr1[57]*CL1[13]+pr1[58]*CL1[14]+pr1[59]*CL1[15]);
@@ -7385,14 +7093,14 @@ void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArr
 				}
 			}
 		}
-
+		
 	for(int i=0;i<nchar;i++)
 		destCLA->underflow_mult[i]=LCLA->underflow_mult[i];
-
+	
 	destCLA->rescaleRank=LCLA->rescaleRank+2;
-	}
+	} 
 
-void Tree::CalcFullCLAInternalTerminalNState(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pr1, const FLOAT_TYPE *pr2, char *dat2){
+void Tree::CalcFullCLAInternalTerminalNState(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pr1, const FLOAT_TYPE *pr2, char *dat2, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *des=destCLA->arr;
@@ -7401,14 +7109,17 @@ void Tree::CalcFullCLAInternalTerminalNState(CondLikeArray *destCLA, const CondL
 	const FLOAT_TYPE *CL1=CL;
 	const char *data2=dat2;
 
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
+
 	const int nchar = data->NChar();
 	const int nRateCats = mod->NRateCats();
 	const int nstates = mod->NStates();
 	const int *counts = data->GetCounts();
 
-#ifdef UNIX
+#ifdef UNIX	
 	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);	
 #endif
 
 	if(siteToScore > 0) data2 += siteToScore;
@@ -7446,19 +7157,22 @@ void Tree::CalcFullCLAInternalTerminalNState(CondLikeArray *destCLA, const CondL
 			}
 		else data2++;
 		}
-
+	
 	for(int i=0;i<nchar;i++)
 		destCLA->underflow_mult[i]=LCLA->underflow_mult[i];
-
+	
 	destCLA->rescaleRank=LCLA->rescaleRank+2;
-	}
+	} 
 
-void Tree::CalcFullCLAPartialInternalRateHet(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pr1, CondLikeArray *partialCLA){
+void Tree::CalcFullCLAPartialInternalRateHet(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pr1, CondLikeArray *partialCLA, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
 	FLOAT_TYPE *CL1=LCLA->arr;
 	FLOAT_TYPE *partial=partialCLA->arr;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nchar = data->NChar();
 	const int nRateCats = mod->NRateCats();
@@ -7475,83 +7189,51 @@ void Tree::CalcFullCLAPartialInternalRateHet(CondLikeArray *destCLA, const CondL
 			*(dest++) = ( pr1[4]*CL1[0]+pr1[5]*CL1[1]+pr1[6]*CL1[2]+pr1[7]*CL1[3]) * *(partial++);
 			*(dest++) = ( pr1[8]*CL1[0]+pr1[9]*CL1[1]+pr1[10]*CL1[2]+pr1[11]*CL1[3]) * *(partial++);
 			*(dest++) = ( pr1[12]*CL1[0]+pr1[13]*CL1[1]+pr1[14]*CL1[2]+pr1[15]*CL1[3]) * *(partial++);
-
+			
 			*(dest++) = ( pr1[16]*CL1[4]+pr1[17]*CL1[5]+pr1[18]*CL1[6]+pr1[19]*CL1[7]) * *(partial++);
 			*(dest++) = ( pr1[20]*CL1[4]+pr1[21]*CL1[5]+pr1[22]*CL1[6]+pr1[23]*CL1[7]) * *(partial++);
 			*(dest++) = ( pr1[24]*CL1[4]+pr1[25]*CL1[5]+pr1[26]*CL1[6]+pr1[27]*CL1[7]) * *(partial++);
 			*(dest++) = ( pr1[28]*CL1[4]+pr1[29]*CL1[5]+pr1[30]*CL1[6]+pr1[31]*CL1[7]) * *(partial++);
-
+		
 			*(dest++) = ( pr1[32]*CL1[8]+pr1[33]*CL1[9]+pr1[34]*CL1[10]+pr1[35]*CL1[11]) * *(partial++);
 			*(dest++) = ( pr1[36]*CL1[8]+pr1[37]*CL1[9]+pr1[38]*CL1[10]+pr1[39]*CL1[11]) * *(partial++);
 			*(dest++) = ( pr1[40]*CL1[8]+pr1[41]*CL1[9]+pr1[42]*CL1[10]+pr1[43]*CL1[11]) * *(partial++);
 			*(dest++) = ( pr1[44]*CL1[8]+pr1[45]*CL1[9]+pr1[46]*CL1[10]+pr1[47]*CL1[11]) * *(partial++);
-
+		
 			*(dest++) = ( pr1[48]*CL1[12]+pr1[49]*CL1[13]+pr1[50]*CL1[14]+pr1[51]*CL1[15]) * *(partial++);
 			*(dest++) = ( pr1[52]*CL1[12]+pr1[53]*CL1[13]+pr1[54]*CL1[14]+pr1[55]*CL1[15]) * *(partial++);
 			*(dest++) = ( pr1[56]*CL1[12]+pr1[57]*CL1[13]+pr1[58]*CL1[14]+pr1[59]*CL1[15]) * *(partial++);
 			*(dest++) = ( pr1[60]*CL1[12]+pr1[61]*CL1[13]+pr1[62]*CL1[14]+pr1[63]*CL1[15]) * *(partial++);
 			CL1+=16;
-			assert(*(dest-1)>=ZERO_POINT_ZERO);
+			assert(*(dest-1)>ZERO_POINT_ZERO);
 			}
 		}
 	else{
 		for(int i=0;i<nchar;i++){
 			for(int r=0;r<nRateCats;r++){
-				*(dest++) = ( pr1[16*r+0]*CL1[0]+pr1[16*r+1]*CL1[1]+pr1[16*r+2]*CL1[2]+pr1[16*r+3]*CL1[3]) * *(partial++);
-				*(dest++) = ( pr1[16*r+4]*CL1[0]+pr1[16*r+5]*CL1[1]+pr1[16*r+6]*CL1[2]+pr1[16*r+7]*CL1[3]) * *(partial++);
-				*(dest++) = ( pr1[16*r+8]*CL1[0]+pr1[16*r+9]*CL1[1]+pr1[16*r+10]*CL1[2]+pr1[16*r+11]*CL1[3]) * *(partial++);
-				*(dest++) = ( pr1[16*r+12]*CL1[0]+pr1[16*r+13]*CL1[1]+pr1[16*r+14]*CL1[2]+pr1[16*r+15]*CL1[3]) * *(partial++);
+				*(dest++) = ( pr1[16*r+0]*CL1[4*r+0]+pr1[16*r+1]*CL1[4*r+1]+pr1[16*r+2]*CL1[4*r+2]+pr1[16*r+3]*CL1[4*r+3]) * *(partial++);
+				*(dest++) = ( pr1[16*r+4]*CL1[4*r+0]+pr1[16*r+5]*CL1[4*r+1]+pr1[16*r+6]*CL1[4*r+2]+pr1[16*r+7]*CL1[4*r+3]) * *(partial++);
+				*(dest++) = ( pr1[16*r+8]*CL1[4*r+0]+pr1[16*r+9]*CL1[4*r+1]+pr1[16*r+10]*CL1[4*r+2]+pr1[16*r+11]*CL1[4*r+3]) * *(partial++);
+				*(dest++) = ( pr1[16*r+12]*CL1[4*r+0]+pr1[16*r+13]*CL1[4*r+1]+pr1[16*r+14]*CL1[4*r+2]+pr1[16*r+15]*CL1[4*r+3]) * *(partial++);
 				CL1+=4;
-				assert(*(dest-1)>=ZERO_POINT_ZERO);
+				assert(*(dest-1)>ZERO_POINT_ZERO);
 				}
 			}
 		}
-
+		
 	for(int site=0;site<nchar;site++){
 		destCLA->underflow_mult[site]=partialCLA->underflow_mult[site] + LCLA->underflow_mult[site];
 		}
 	}
 
-//this isn't currently used, and may not even work
-void Tree::CalcFullCLAPartialInternalNState(CondLikeArray *destCLA, const CondLikeArray *LCLA, const FLOAT_TYPE *pmat, CondLikeArray *partialCLA){
-	//this function assumes that the pmat is arranged with the 16 entries for the
-	//first rate, followed by 16 for the second, etc.
-	FLOAT_TYPE *dest=destCLA->arr;
-	const FLOAT_TYPE *LCL=LCLA->arr;
-	const FLOAT_TYPE *partial=partialCLA->arr;
-
-	const int nRateCats = mod->NRateCats();
-	const int nstates = mod->NStates();
-	const int nchar = data->NChar();
-
-#ifdef UNIX
-	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-	madvise((void *)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-#endif
-
-	for(int i=0;i<nchar;i++) {
-		for(int rate=0;rate<nRateCats;rate++){
-			for(int from=0;from<nstates;from++){
-				FLOAT_TYPE fromTot = ZERO_POINT_ZERO;
-				for(int to=0;to<nstates;to++){
-					fromTot += pmat[rate*nstates*nstates + from*nstates + to] * LCL[to];
-					}
-				dest[from] = fromTot * partial[from];
-				}
-			partial += nstates;
-			LCL += nstates;
-			dest += nstates;
-			}
-		assert(dest[-nstates*nRateCats] >= 0.0);
-		assert(dest[-nstates*nRateCats] == dest[-nstates*nRateCats]);
-		}
-	}
-
-void Tree::CalcFullCLAPartialTerminalRateHet(CondLikeArray *destCLA, const CondLikeArray *partialCLA, const FLOAT_TYPE *Lpr, char *Ldata){
+void Tree::CalcFullCLAPartialTerminalRateHet(CondLikeArray *destCLA, const CondLikeArray *partialCLA, const FLOAT_TYPE *Lpr, char *Ldata, int modIndex, int dataIndex){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
 	FLOAT_TYPE *dest=destCLA->arr;
 	FLOAT_TYPE *partial=partialCLA->arr;
+
+	const SequenceData *data = dataPart->GetSubset(dataIndex);
+	Model *mod = modPart->GetModel(modIndex);
 
 	const int nchar = data->NChar();
 	const int nRateCats = mod->NRateCats();
@@ -7568,11 +7250,11 @@ void Tree::CalcFullCLAPartialTerminalRateHet(CondLikeArray *destCLA, const CondL
 				*(dest++) = Lpr[(*Ldata+4)+16*i] * *(partial++);
 				*(dest++) = Lpr[(*Ldata+8)+16*i] * *(partial++);
 				*(dest++) = Lpr[(*Ldata+12)+16*i] * *(partial++);
-//				assert(*(dest-1)>=ZERO_POINT_ZERO);
+//				assert(*(dest-1)>ZERO_POINT_ZERO);
 				}
 			Ldata++;
 			}
-
+			
 		else if(*Ldata == -4){ //total ambiguity
 			for(int i=0;i<4*nRateCats;i++) *(dest++) = *(partial++);
 			Ldata++;
@@ -7587,11 +7269,11 @@ void Tree::CalcFullCLAPartialTerminalRateHet(CondLikeArray *destCLA, const CondL
 					*(dest+(i*4)+1) += Lpr[(*Ldata+4)+16*i];
 					*(dest+(i*4)+2) += Lpr[(*Ldata+8)+16*i];
 					*(dest+(i*4)+3) += Lpr[(*Ldata+12)+16*i];
-//					assert(*(dest-1)>=ZERO_POINT_ZERO);
+//					assert(*(dest-1)>ZERO_POINT_ZERO);
 					}
 				Ldata++;
 				}
-
+			
 			//now add the partial
 			for(int r=0;r<nRateCats;r++){
 				*(dest++) *= *(partial++);
@@ -7605,52 +7287,15 @@ void Tree::CalcFullCLAPartialTerminalRateHet(CondLikeArray *destCLA, const CondL
 		destCLA->underflow_mult[i]=partialCLA->underflow_mult[i];
 }
 
-//this isn't currently used, and may not even work
-void Tree::CalcFullCLAPartialTerminalNState(CondLikeArray *destCLA, const CondLikeArray *partialCLA, const FLOAT_TYPE *prmat, const char *Ldata){
-	//this function assumes that the pmat is arranged with the nstates^2 entries for the
-	//first rate, followed by nstates^2 for the second, etc.
-	FLOAT_TYPE *dest=destCLA->arr;
-	const FLOAT_TYPE *partial=partialCLA->arr;
-
-	const int nstates = mod->NStates();
-	const int nRateCats = mod->NRateCats();
-	const int nchar = data->NChar();
-
-#ifdef UNIX
-	madvise((void*)dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
-#endif
-
-	for(int i=0;i<nchar;i++){
-		if(*Ldata < nstates){ //no ambiguity
-			for(int rate=0;rate<nRateCats;rate++){
-				const int rateOffset = rate * nstates * nstates;
-				for(int from=0;from<nstates;from++){
-					const int offset = from * nstates;
-					*dest++ = prmat[rateOffset + offset + (*Ldata)] * partial[from];
-					}
-				partial += nstates;
-				}
-			}
-		else{ //total ambiguity
-			for(int rate=0;rate<nRateCats;rate++){
-				for(int from=0;from<nstates;from++){
-					*dest++ = partial[from];
-					}
-				partial += nstates;
-				}
-			}
-		Ldata++;
-		}
-	}
-
 //SINGLE SITE FUNCTIONS
 
 pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPrecision){
-	//this is silly, but the site likelihood calculating function will do it for the
+	//this is silly, but the site likelihood calculating function will do it for the 
 	//correct single site, but using the pattern count of the first character.  So, we'll
 	//need to divide by this count to get the proper site like
-	FLOAT_TYPE siteCount = (FLOAT_TYPE) data->Count(0);
+	//PARTITION
+	FLOAT_TYPE siteCount = (FLOAT_TYPE) dataPart->GetSubset(0)->Count(0);
+	//FLOAT_TYPE siteCount = (FLOAT_TYPE) data->Count(0);
 	Score();
 	FLOAT_TYPE prev=lnL/siteCount;
 	FLOAT_TYPE cur;
@@ -7665,46 +7310,24 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 #ifdef DEBUG_SCALE_OPT
 	ofstream deb("scaleTrace.log");
 	deb.precision(20);
-	ofstream trees("trees.log");
-	trees.precision(10);
-	ofstream scls("scales.log");
-	scls.precision(10);
-
-	trees << "#NEXUS\nbegin trees;" << endl;
-	trees.precision(5);
-	int sit = siteToScore;
-	siteToScore = -1;
-	ofprefix="poo";
-	for(int s=0;s<75;s++){
-		FLOAT_TYPE scale= 1.0e-8 * pow(1.5, s);
-		scls << s << "\t" << scale << endl; 
+	for(int s=0;s<50;s++){
+		FLOAT_TYPE scale=0.5 + s*.025;
 		ScaleWholeTree(scale);
-		if(s == 0)
-			sitelikeLevel = 1;
-		else
-			sitelikeLevel = -1;
 		Score();
 		deb << scale << "\t" << lnL << endl;
-		string str;
-		root->MakeNewick(str, data, false, true, true);
-		trees << "tree t" << s << " = [scale = " << scale << " " << lnL / siteCount << "]" << str.c_str() << ";\n";
-		ScaleWholeTree(ONE_POINT_ZERO/scale);
+		ScaleWholeTree(ONE_POINT_ZERO/scale);	
 		}
-	siteToScore = sit;
 	deb.close();
-	trees << "end;" << endl;
-	trees.close();
-	scls.close();
 #endif
 
-	if(FloatingPointEquals(lnL, ZERO_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0))){
+	if(FloatingPointEquals(lnL, ZERO_POINT_ZERO, 1e-8)){
 		return make_pair<FLOAT_TYPE, FLOAT_TYPE>(-ONE_POINT_ZERO, ZERO_POINT_ZERO);
 		}
 
 	int pass=1;
 	while(1){
-		//reversed this now so the reduction in scale is done first when getting the
-		//derivs.  This works better if some blens are at DEF_MAX_BLEN because the
+		//reversed this now so the reduction in scale is done first when getting the 
+		//derivs.  This works better if some blens are at DEF_MAX_BLEN because the 
 		//scaling up causes them to hit the max and the relative blens to change
 
 #ifdef SINGLE_PRECISION_FLOATS
@@ -7718,10 +7341,10 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 		ScaleWholeTree(scale);
 		Score();
 		cur=lnL/siteCount;
-		ScaleWholeTree(ONE_POINT_ZERO/scale);//return the tree to its original scale
+		ScaleWholeTree(ONE_POINT_ZERO/scale);//return the tree to its original scale	
 		FLOAT_TYPE d12=(cur-prev)/-incr;
 
-		if(pass == 1 && fabs(d12) < max(1.0e-8, GARLI_FP_EPS * 2.0)){
+		if(pass == 1 && fabs(d12) < 1.0e-8){
 			//The surface looks suspiciously flat.  Test if the likelihood
 			//is really invariant for different scales (which means that
 			//the site is all missing or only has an observed state for one taxon)
@@ -7729,7 +7352,7 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 			Score();
 			FLOAT_TYPE s = lnL/siteCount;
 			ScaleWholeTree(1.0/1.1);
-			if(fabs(prev - s) < max(1.0e-8, GARLI_FP_EPS * 2.0)) return make_pair<FLOAT_TYPE, FLOAT_TYPE>(-ONE_POINT_ZERO, prev);
+			if(fabs(prev - s) < 1.0e-8) return make_pair<FLOAT_TYPE, FLOAT_TYPE>(-ONE_POINT_ZERO, prev);
 			}
 
 		scale=ONE_POINT_ZERO + incr;
@@ -7741,7 +7364,7 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 
 		FLOAT_TYPE d1=(d11+d12)*ZERO_POINT_FIVE;
 		FLOAT_TYPE d2=(d11-d12)/incr;
-
+		
 		FLOAT_TYPE est = -d1/d2;
 		FLOAT_TYPE estImprove = d1*est + d2*(est*est*ZERO_POINT_FIVE);
 
@@ -7751,7 +7374,7 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 			//cout << pass << endl;
 			return make_pair<FLOAT_TYPE, FLOAT_TYPE>(effectiveScale, prev);
 			}
-
+		
 		if(d2 < ZERO_POINT_ZERO){
 			est = max(min((FLOAT_TYPE)0.5, est), (FLOAT_TYPE)-0.5);
 			t=ONE_POINT_ZERO + est;
@@ -7760,7 +7383,7 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 			if(d1 > ZERO_POINT_ZERO) t=(FLOAT_TYPE)2.0;
 			else t=(FLOAT_TYPE)0.5;
 			}
-
+		
 		//update the brackets
 		if(d1 <= ZERO_POINT_ZERO && effectiveScale < upperBracket)
 			upperBracket = effectiveScale;
@@ -7781,12 +7404,12 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 		if(effectiveScale > 100.0) return make_pair<FLOAT_TYPE, FLOAT_TYPE>(100.0, prev);
 		ScaleWholeTree(scale);
 		if(effectiveScale < 1e-4){
-			//The rate is essentially zero.  Invariant sites should be getting caught
+			//The rate is essentially zero.  Invariant sites should be getting caught 
 			//before even calling this func, so this probably won't be visited
 			ScaleWholeTree(1.0/effectiveScale);
 			return make_pair<FLOAT_TYPE, FLOAT_TYPE>(effectiveScale, prev);
 			}
-
+		
 		Score();
 		cur=lnL/siteCount;
 		lastChange = cur - prev;

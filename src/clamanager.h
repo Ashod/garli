@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -26,7 +26,6 @@
 using namespace std;
 
 extern int memLevel;
-extern ModelSpecification modSpec;
 
 #ifdef UNIX
 	#include <sys/mman.h>
@@ -34,29 +33,69 @@ extern ModelSpecification modSpec;
 
 #undef CLA_DEBUG
 
+class ClaSpecifier{
+	public:
+	int claIndex; //this is just the number of the corresponding cla - there is a 1 to 1 correspondence
+	int modelIndex;
+	int dataIndex;
+	ClaSpecifier(int c, int m, int d):claIndex(c), modelIndex(m), dataIndex(d){};
+	};
+
+extern vector<ClaSpecifier> claSpecs;
+
 class ClaManager{
 	int numNodes;//the number of nodes in each tree
 	int numRates;
 	int numClas;
 	int numHolders;
 	int maxUsed;
-	CondLikeArray **allClas; //these are the actual arrays to be used in calculations, but will assigned to 
-							 //nodes via a CondLikeArrayHolder.  There may be a limited number
-							 
+	CondLikeArraySet **allClas; //these are the actual sets of arrays to be used in calculations, but will assigned to 
+							 //nodes via a CondLikeArrayHolder.  There may be a limited number						 
+
 	CondLikeArrayHolder *holders; //there will be enough of these such that every node and direction could
 								  //have a unique one, although many will generally be shared
 								  
-	vector<CondLikeArray *> claStack;
+	vector<CondLikeArraySet *> claStack;
 	vector<int> holderStack;
 	
 	public:	
-	ClaManager(int nnod, int nClas, int nHolders, int nchar, int nrates) : numNodes(nnod), numClas(nClas), numHolders(nHolders), numRates(nrates){
+	//PARTITION	
+	//ClaManager(int nnod, int nClas, int nHolders, int nchar, int nrates) : numNodes(nnod), numClas(nClas), numHolders(nHolders), numRates(nrates){
+/*	ClaManager(int nnod, int numClas, int nHolders, const ModelPartition *mods, const DataPartition *data) : numNodes(nnod), numHolders(nHolders){
 		maxUsed=0;
-		allClas=new CondLikeArray*[numClas];
+		allClas=new CondLikeArraySet*[numClas];
 		claStack.reserve(numClas);
 		for(int i=numClas-1;i>=0;i--){
-			allClas[i]=new CondLikeArray;
-			allClas[i]->Allocate(modSpec.nstates, nchar, numRates);
+			allClas[i]=new CondLikeArraySet;
+			//for(vector<Model *>::iterator modit = mods->models.begin();modit != mods->models.end();modit++){
+			for(int m = 0;m < mods->NumModels();m++){
+				const Model *thisMod = mods->GetModel(m);
+				CondLikeArray *thisCLA = new CondLikeArray(data->GetSubset(thisMod->dataIndex)->NChar(), thisMod->NStates(), thisMod->NRateCats(), thisMod->dataIndex);
+				allClas[i]->AddCLA(thisCLA);
+				allClas[i]->Allocate();
+				}
+			claStack.push_back(allClas[i]);
+			}
+		holders = new CondLikeArrayHolder[numHolders];
+		holderStack.reserve(numHolders);
+		for(int i=numHolders-1;i>=0;i--)
+			holderStack.push_back(i);
+		}
+*/
+	ClaManager(int nnod, int nClas, int nHolders, const ModelPartition *mods, const DataPartition *data) : numNodes(nnod), numClas(nClas), numHolders(nHolders){
+		maxUsed=0;
+		allClas=new CondLikeArraySet*[numClas];
+		claStack.reserve(numClas);
+		for(int i=numClas-1;i>=0;i--){
+			allClas[i]=new CondLikeArraySet;
+			//for(vector<Model *>::iterator modit = mods->models.begin();modit != mods->models.end();modit++){
+			//for(int m = 0;m < mods->NumModels();m++){
+			for(vector<ClaSpecifier>::iterator specs = claSpecs.begin();specs != claSpecs.end();specs++){
+				const Model *thisMod = mods->GetModel((*specs).modelIndex);
+				CondLikeArray *thisCLA = new CondLikeArray(data->GetSubset((*specs).dataIndex)->NChar(), thisMod->NStates(), thisMod->NRateCats());
+				allClas[i]->AddCLA(thisCLA);
+				}
+			allClas[i]->Allocate();
 			claStack.push_back(allClas[i]);
 			}
 		holders = new CondLikeArrayHolder[numHolders];
@@ -82,7 +121,7 @@ class ClaManager{
 
 
 	int AssignClaHolder();
-	CondLikeArray* AssignFreeCla();
+	CondLikeArraySet* AssignFreeCla();
 	void FillHolder(int index, int dir); //sorry Mark
 
 	int GetReclaimLevel(int index);
@@ -93,11 +132,11 @@ class ClaManager{
 	bool IsClaReserved(int index) {return holders[index].reserved;}
 	bool IsClaTempReserved(int index) {return holders[index].tempReserved;};
 	void ReclaimSingleCla(int index);
-	void CountClaTotals(int &clean, int &tempres, int &res, int &assigned);
+	void CountClaTotals(int &clean, int &tempres, int &res);
 	void RecycleClas();
 	int GetClaNumber(int index);
 	int CountClasInUse(int recLevel);
-	CondLikeArray *GetCla(int index);	
+	CondLikeArraySet *GetCla(int index);	
 	const CondLikeArrayHolder *GetHolder(int index);	
 	bool IsDirty(int index);
 	int SetDirty(int index);
@@ -116,12 +155,12 @@ class ClaManager{
 		}
 	
 	inline void ClaManager::FillHolder(int index, int dir){
-		holders[index].theArray = AssignFreeCla();
+		holders[index].theSet = AssignFreeCla();
 		holders[index].reclaimLevel=dir;
 		}
 
 	inline int ClaManager::GetReclaimLevel(int index){
-		if(holders[index].theArray == NULL) return -1;
+		if(holders[index].theSet == NULL) return -1;
 		return holders[index].GetReclaimLevel();
 		}
 
@@ -140,26 +179,25 @@ class ClaManager{
 	inline void ClaManager::ReclaimSingleCla(int index){
 		//this simply removes the cla from a holder.  It is equivalent to just
 		//dirtying it if only a single tree shares the holder
-		if(holders[index].theArray==NULL) return;
-		claStack.push_back(holders[index].theArray);
+		if(holders[index].theSet==NULL) return;
+		claStack.push_back(holders[index].theSet);
 		holders[index].SetReclaimLevel(0);
-		holders[index].theArray=NULL;				
+		holders[index].theSet=NULL;				
 		}
 
-	inline void ClaManager::CountClaTotals(int &clean, int &tempres, int &res, int &assigned){
+	inline void ClaManager::CountClaTotals(int &clean, int &tempres, int &res){
 		for(int i=0;i<numHolders;i++){
-			if(holders[i].theArray != NULL) clean++;
+			if(holders[i].theSet != NULL) clean++;
 			if(holders[i].tempReserved ==true) tempres++;
 			if(holders[i].reserved==true) res++;
 			}		
-		assigned = this->numHolders - holderStack.size();
 		}
 	
 	inline int ClaManager::GetClaNumber(int index){
 		//this is ugly, but should only be called for debugging
-		if(holders[index].theArray == NULL) return -1;
+		if(holders[index].theSet == NULL) return -1;
 		for(int i=0;i<numClas;i++)
-			if(holders[index].theArray == allClas[i]) return i;
+			if(holders[index].theSet == allClas[i]) return i;
 		assert(0);
 		return -1;
 		}
@@ -167,15 +205,15 @@ class ClaManager{
 	inline int ClaManager::CountClasInUse(int recLevel){
 		int num=0;
 		for(int i=0;i<numHolders;i++){
-			if(holders[i].theArray != NULL)
+			if(holders[i].theSet != NULL)
 				if(holders[i].GetReclaimLevel() == recLevel) num++;
 			}
 		return num;
 		}
 
-	inline CondLikeArray *ClaManager::GetCla(int index){
-		assert(holders[index].theArray != NULL);
-		return holders[index].theArray;
+	inline CondLikeArraySet *ClaManager::GetCla(int index){
+		assert(holders[index].theSet != NULL);
+		return holders[index].theSet;
 		}
 	
 	inline const CondLikeArrayHolder *ClaManager::GetHolder(int index){
@@ -185,7 +223,7 @@ class ClaManager{
 	inline bool ClaManager::IsDirty(int index){
 		//dirtyness is now synonymous with a null cla pointer in the holder
 		assert(index > -1);
-		return (holders[index].theArray == NULL);	
+		return (holders[index].theSet == NULL);	
 		}
 
 	inline int ClaManager::SetDirty(int index){
@@ -198,10 +236,10 @@ class ClaManager{
 		assert(index != -1);
 
 		if(holders[index].numAssigned==1){
-			if(holders[index].theArray != NULL){
+			if(holders[index].theSet != NULL){
 				holders[index].SetReclaimLevel(0);
-				claStack.push_back(holders[index].theArray);
-				holders[index].theArray=NULL;
+				claStack.push_back(holders[index].theSet);
+				holders[index].theSet=NULL;
 				}
 			}
 		else{
@@ -221,10 +259,10 @@ class ClaManager{
 		assert(index != -1);
 		if(holders[index].numAssigned==1){
 			holderStack.push_back(index);
-			if(holders[index].theArray != NULL){
-				assert(find(claStack.begin(), claStack.end(), holders[index].theArray) == claStack.end());
-				//assert(holders[index].theArray->NStates()==4);
-				claStack.push_back(holders[index].theArray);
+			if(holders[index].theSet != NULL){
+				assert(find(claStack.begin(), claStack.end(), holders[index].theSet) == claStack.end());
+				//assert(holders[index].theSet->NStates()==4);
+				claStack.push_back(holders[index].theSet);
 				}
 			holders[index].Reset();
 			}
@@ -239,7 +277,7 @@ class ClaManager{
 		int used=0;
 		int reclaim2=0;
 		for(int i=0;i<numHolders;i++){
-			if(holders[i].theArray != NULL){
+			if(holders[i].theSet != NULL){
 				used++;
 				if(holders[i].GetReclaimLevel() == 2) reclaim2++;
 				}
@@ -250,9 +288,9 @@ class ClaManager{
 	inline void ClaManager::MakeAllHoldersDirty(){
 		
 		for(int i=0;i<numHolders;i++){
-			if(holders[i].theArray != NULL){
-				claStack.push_back(holders[i].theArray);
-				holders[i].theArray=NULL;
+			if(holders[i].theSet != NULL){
+				claStack.push_back(holders[i].theSet);
+				holders[i].theSet=NULL;
 				}
 			}
 		}
@@ -289,10 +327,10 @@ class ClaManager{
 	void CheckAssignedNumber(int chk, int node, int index){
 		assert(chk==assignedClaArray[node*numCopies+index]);
 		}
-*.		
+*/		
 //	int NumCopies(){ return numCopies;}
-	int NumNodes(){return numNodes;}
-*/ /*	
+//	int NumNodes(){return numNodes;}
+/*	
 	void OutputAssignedClaArray(){
 		static int count = 0;
 		//ofstream out("claindeces.txt", ios::app);

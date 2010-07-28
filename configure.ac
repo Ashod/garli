@@ -2,7 +2,7 @@
 # This file was written by hand (by mth using PAUP's configure.ac and http://autotoolset.sourceforge.net/tutorial.html as guides).
 
 AC_PREREQ(2.59)
-AC_INIT([Garli], [1.0], [garli.support@gmail.com])
+AC_INIT([Garli], [0.97], [zwickl@nescent.org])
 
 AC_CONFIG_SRCDIR([src/garlimain.cpp])
 AC_CONFIG_HEADER([config.h])
@@ -22,7 +22,7 @@ AC_CANONICAL_TARGET
 ################################################################################
 AC_CONFIG_MACRO_DIR(config)
 
-AM_INIT_AUTOMAKE([1.9 foreign dist-zip tar-ustar filename-length-max=299])
+AM_INIT_AUTOMAKE([1.9 foreign dist-tarZ tar-ustar filename-length-max=299])
 
 # Checks for programs.
 AC_PROG_LN_S
@@ -32,7 +32,7 @@ INP_CXXFLAGS="$CXXFLAGS"
 AC_PROG_CXX
 
 # Initialize CXXFLAGS to prevent it from defaulting to "-g -O2"
-CXXFLAGS="$INP_CXXFLAGS -DUNIX -DNCL_CONST_FUNCS"
+CXXFLAGS="$INP_CXXFLAGS -DUNIX"
 
 # required because we are building a library 
 AC_PROG_RANLIB
@@ -60,19 +60,12 @@ AC_FUNC_MALLOC
 AC_FUNC_STRTOD
 AC_CHECK_FUNCS([floor memmove memset pow sqrt strchr strdup strtol])
 
-# A few miscelaneous features, not of general interest
-AC_ARG_ENABLE(profiler, AC_HELP_STRING([--enable-profiler], [built in runtime profiler]),
-[AC_DEFINE([ENABLE_CUSTOM_PROFILER], [1], [profiler for assessing execution times])],
-[])
-
-AC_ARG_ENABLE(leak_detection, AC_HELP_STRING([--enable-leak-detection], [memory leak detection is turned on]),
-[AC_DEFINE([MONITORING_ALLOCATION], [1], [monitors all allocation/deallocation, writes report])],
-[])
 
 
 #--------------------------------------------------------------------------------------------------#
 #  Set CXXFLAGS                                                                                    #
 #--------------------------------------------------------------------------------------------------#
+
 
 # Check for debugging mode.
 AC_ARG_ENABLE(debugging,
@@ -83,6 +76,9 @@ if test "$enable_debugging" = yes; then
 	   ])
 fi
 
+
+# we tell NCL that we will ignore asserts
+NCL_ASSERT_FLAG="-DIGNORE_NXS_ASSERT"
 # Check whether asserts should be allowed.
 AC_ARG_ENABLE(asserts,
 	AC_HELP_STRING([--enable-asserts],[build with asserts on (NDEBUG not defined)]), , [enable_asserts=no])
@@ -90,6 +86,9 @@ if test "$enable_asserts" = yes; then
 	AC_MSG_NOTICE([
 	   *** NOTE: compiling with assertions on (NDEBUG not defined)
 	   ])
+	if test "$enable_debugging" = yes; then
+		NCL_ASSERT_FLAG=""
+	fi
 fi
 
 # Compile openMP multithreaded version
@@ -99,15 +98,6 @@ if test "$enable_openmp" = yes; then
 	AC_MSG_NOTICE([
 	   *** NOTE: compiling OpenMP multithreaded version
 	   ])
-fi
-
-# Compile BOINC version
-AC_ARG_ENABLE(boinc,
-        AC_HELP_STRING([--enable-boinc],[build BOINC version (requires BOINC library and api installation.  Building may require much fiddling.)]), , [enable_boinc=no])
-if test "$enable_boinc" = yes; then
-        AC_MSG_NOTICE([
-           *** NOTE: compiling BOINC version
-           ])
 fi
 
 # Mpi run forking version
@@ -137,25 +127,6 @@ if test "$enable_single_prec" = yes; then
            ])
 fi
 
-#DLA - cuda gpu version (still being tested)
-AC_ARG_ENABLE(cuda-gpu,
-        AC_HELP_STRING([--enable-cuda-gpu],[use CUDA GPU (EXPERIMENTAL)]), , [enable_cuda_gpu=no])
-if test "$enable_cuda_gpu" = yes; then
-        AC_MSG_NOTICE([
-           *** NOTE: compiling CUDA GPU version
-           ])
-fi
-
-#DLA - cuda gpu pinned memory (still being tested)
-AC_ARG_ENABLE(cuda-memory,
-        AC_HELP_STRING([--enable-cuda-memory],[use pinned memory (requires --enable-cuda-gpu)]), , [enable_cuda_memory=no])
-if test "$enable_cuda_gpu" = yes; then
-	if test "$enable_cuda_memory" = yes; then
-        AC_MSG_NOTICE([
-           *** NOTE: compiling CUDA GPU version with pinned memory
-           ])
-	fi
-fi
 
 # Initialize optimization flag in case it doesn't get set below.
 CXXFLAGS_OPTIM_SPEED="-O"
@@ -180,13 +151,6 @@ if test  "$enable_openmp" = yes; then
 	fi
 fi
 
-#BOINC compilation
-if test  "$enable_boinc" = yes; then
-        CXXFLAGS="$CXXFLAGS -DBOINC"
-		LIBS="$LIBS -lpthread -lboinc -lboinc_api"
-fi
-
-#Compiler choice
 if test "$CC" = "icc" -o "$CC" = "icc" ; then
 #	Intel C compiler for Linux
 	if test "$enable_debugging" = no; then
@@ -230,63 +194,6 @@ if test  "$enable_single_prec" = yes; then
 	fi
 fi
 
-##########################################################
-# DLA cuda gpu                                           #
-#                                                        #
-
-CUDA_INSTALL_PATH="/usr/local/cuda"
-CUDA_SDK_INSTALL_PATH="/Developer/CUDA"
-
-AC_ARG_WITH(
-	[cuda],
-	AC_HELP_STRING(
-		[--with-cuda=DIR],
-		[Specify the root directory for cuda toolkit. Omit this flag to build using the default location ("/usr/local/cuda").]
-		),
-	[
-	if ! test "$withval" = "yes" -o "$withval" = "no" ; then
-		CUDA_INSTALL_PATH="$withval"
-	fi
-	])
-	
-AC_ARG_WITH(
-	[cuda-sdk],
-	AC_HELP_STRING(
-		[--with-cuda-sdk=DIR],
-		[Specify the root directory for cuda sdk. Omit this flag to build using the default location ("/Developer/CUDA").]
-		),
-	[
-	if ! test "$withval" = "yes" -o "$withval" = "no" ; then
-		CUDA_SDK_INSTALL_PATH="$withval"
-	fi
-	])
-
-if test  "$enable_cuda_gpu" = yes; then
-	NVCCFLAGS="$NVCCFLAGS --ptxas-options=-v -DUNIX --compiler-options -fno-strict-aliasing"
-	CUDA_CFLAGS="$CUDA_CFLAGS -DCUDA_GPU"
-	CUDA_CFLAGS="$CUDA_CFLAGS -I$CUDA_INSTALL_PATH/include -I$CUDA_SDK_INSTALL_PATH/common/inc"
-	if test  "$enable_cuda_memory" = yes; then
-		CUDA_CFLAGS="$CUDA_CFLAGS -DCUDA_MEMORY_PINNED"
-	fi
-	if test  "$enable_single_prec" = yes; then
-		NVCCFLAGS="$NVCCFLAGS -DSINGLE_PRECISION_FLOATS"
-	fi
-   CUDA_LDFLAGS="-L$CUDA_INSTALL_PATH/lib -L$CUDA_SDK_INSTALL_PATH/lib"
-   CUDA_LIBS="-lcuda -lcudart -lcutil"
-   LDFLAGS="$LDFLAGS $CUDA_LDFLAGS"
-   LIBS="$LIBS $CUDA_LIBS"
-   CXXFLAGS="$CXXFLAGS $CUDA_CFLAGS"
-   NVCCFLAGS="$NVCCFLAGS $CUDA_CFLAGS"
-   NVCC="nvcc"
-   AC_SUBST(NVCC)
-   AC_SUBST(NVCCFLAGS)
-fi
-
-AM_CONDITIONAL(CUDASOURCE, test "$enable_cuda_gpu" = yes)
-
-#                                                        #
-##########################################################
-
 AC_LANG(C++)
 ACX_MPI
 
@@ -309,132 +216,47 @@ fi
 
 CXXFLAGS="$CXXFLAGS $CXXFLAGS_OPTIM_SPEED"
 
-#Location of BOINC library and include files
-BOINC_INSTALL="/usr"
-AC_ARG_WITH(
-	[boinc],
-	AC_HELP_STRING(
-		[--with-boinc=DIR],
-		[Specify the root directory for the BOINC library (parent of the include/boinc and lib directories). Omit this flag to use a system level install of BOINC.]
-		),        
-	[
-	if ! test "$withval" = "yes" -o "$withval" = "no" ; then
-		BOINC_INSTALL="$withval"
-	fi
-	])
-
-if test  "$enable_boinc" = yes; then
-	BOINC_INCL="$BOINC_INSTALL/include/boinc"
-	BOINC_LIB_DIR="$BOINC_INSTALL/lib"
-	if ! test -d "$BOINC_INSTALL" ; then
-		AC_MSG_ERROR([A BOINC library and api installation is required for building the BOINC version of GARLI. Expecting a directory called $BOINC_INCL and libboinc library files in $BOINC_LIB_DIR. Use the --with-boinc flag with configure to specify a location other than /usr/local, or verify that the specified location is correct.])
-	fi
-	CXXFLAGS="$CXXFLAGS -I$BOINC_INCL"
-	LDFLAGS="$LDFLAGS -L$BOINC_LIB_DIR"
-fi
 
 ################################################################################
-#	Require the builder to provide the --with-ncl argument,
-#	otherwise default to looking for a system level installation.
-#	ideally people should be using the build_garli.sh install script
+#	By default, use the bundled ncl code from source, 
+#		but let the --with-ncl argument override this.
 ################################################################################
 NCL_INC_DIR="/usr/local/include"
 NCL_LIB_DIR="/usr/local/lib"
-NCL_BIN_DIR="/usr/local/bin"
-
 AC_ARG_WITH(
 	[ncl],
 	AC_HELP_STRING(
 		[--with-ncl=DIR],
-		[Specify the root directory for the ncl version 2.1 or greater library (parent of the include/ncl and lib directories).  Omit this flag and configure will look for a system level NCL installation.  You might use the build_garli.sh script to automate the build process.]
+		[Specify the root directory for ncl library (parent of the include/ncl and lib directories). Omit this flag to build and use the bundled version of ncl.]
 		),
 	[
 	if ! test "$withval" = "yes" -o "$withval" = "no" ; then
 		NCL_INC_DIR="$withval/include"
 		NCL_LIB_DIR="$withval/lib"
-		NCL_BIN_DIR="$withval/bin"
 	fi
 	])
 
-####DJZ This was to look for an NCL install in other places, but 
-#I gave up on it because the user should either use the script
-#or know what they are doing.
-#if ! test -n "$WNCL" ; then
-#	echo WITH_NCL NOT SPECIFIED
-#	if test -d "$srcdir/ncl/" ; then
-#		echo FOUND NCL DIR
-#		nl=`ls -ld $srcdir/ncl*/ | wc -l`
-#		echo ###		
-#		echo $nl
-#		echo ###
-#		if ! test $nl = 1 ; then
-#			AC_MSG_ERROR([Multiple NCL directories found.])
-#		fi
-#		NCL_BASE=`ls -d $srcdir/ncl*/`
-#		NCL_INC_DIR="$NCL_BASE/include"
-#		NCL_LIB_DIR="$NCL_BASE/lib"
-#		echo NCL_INC_DIR $NCL_INC_DIR
-#	else
-#		echo NO NCL DIR FOUND	
-#	fi
-#else
-#	echo WITH_NCL SPECIFIED
-#fi
-###
-
 if ! test -d "$NCL_INC_DIR/ncl" ; then
-	AC_MSG_ERROR([NCL 2.1 or higher is a prerequisite for building Garli. Expecting a directory called $NCL_INC_DIR/ncl, verify that the argument to --with-ncl is correct.])
+	AC_MSG_ERROR([NCL is a prerequisite for building Garli. Expecting a directory called $NCL_INC_DIR/ncl, verify that the argument to --with-ncl is correct. You may need to manually make the directory $NCL_INC_DIR/ncl copy all of the ncl headers into that directory if you are using NCL 2.0])
 else
 	if ! test -f "$NCL_INC_DIR/ncl/nxsdefs.h" ; then
-		AC_MSG_ERROR([NCL 2.1 or higher is a prerequisite for building Garli. Expecting a directory called $NCL_INC_DIR/ncl, verify that the argument to --with-ncl is correct.])
+		AC_MSG_ERROR([NCL is a prerequisite for building Garli. Expecting a directory called $NCL_INC_DIR/ncl, verify that the argument to --with-ncl is correct. You may need to manually make the directory $NCL_INC_DIR/ncl copy all of the ncl headers into that directory if you are using NCL 2.0])
 	fi
 fi
 
 if ! test -d "$NCL_LIB_DIR" ; then
-	AC_MSG_ERROR([NCL 2.1 or higher is a prerequisite for building Garli. Expecting a directory called $NCL_LIB_DIR, verify that the argument to --with-ncl is correct.])
+	AC_MSG_ERROR([NCL is a prerequisite for building Garli. Expecting a directory called $NCL_LIB_DIR, verify that the argument to --with-ncl is correct.])
 fi
 
-CPPFLAGS="$CPPFLAGS -I$NCL_INC_DIR -I$NCL_INC_DIR/ncl"
-
+CPPFLAGS="$CPPFLAGS -I$NCL_INC_DIR -I$NCL_INC_DIR/ncl $NCL_ASSERT_FLAG"
 if test -d "$NCL_LIB_DIR/ncl" ; then
 	LDFLAGS="$LDFLAGS -L$NCL_LIB_DIR/ncl"
 else
 	LDFLAGS="$LDFLAGS -L$NCL_LIB_DIR"
 fi
 
-AC_TRY_LINK(
-[],
-[int foo=2;],
-[],
-[AC_MSG_ERROR([Problem with link flags.  Most likely a library cannot be found.  
-Check that any libraries listed below can be found in a system default location or a location specified in LDFLAGS with a -L. 
-LIBS=$LIBS
-LDFLAGS=$LDFLAGS
-])])
-
-LIBS="$LIBS -lncl"
-AC_TRY_LINK( 
-[#include "ncl/nxsdefs.h" ], 
-[onlyDefinedInCouldBeConst ();], 
-[], 
-[AC_MSG_ERROR([NCL must be compiled with the NCL_CONST_FUNCS macro defined. Usually adding -DNCL_CONST_FUNCS to CPPFLAGS in your invocation of the NCL configure script is the solution.])]) 
-
-AC_COMPILE_IFELSE( 
-[#include "ncl/nxsdefs.h" 
-# if ! defined(NCL_MAJOR_VERSION) ||  NCL_MAJOR_VERSION < 2
-#	error "need at least v2"
-# else
-# 	 if ! defined(NCL_MINOR_VERSION) ||  NCL_MINOR_VERSION < 1
-#		error "need at least v2.1"
-#	 endif
-# endif
-], 
-[], 
-[AC_MSG_ERROR([Sorry. NCL 2.1 or greater is required.])]) 
-
 GARLI_LIBS="-lncl"
 
-AC_SUBST([NCL_BIN_DIR])
 
 AC_SUBST([GARLI_LIBS])
 
@@ -450,7 +272,6 @@ AC_SUBST(CPPFLAGS)
 AC_CONFIG_FILES([
 	Makefile 			\
 	src/Makefile		\
-	tests/Makefile	\
 	])
 
 AC_OUTPUT

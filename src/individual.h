@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -54,6 +54,7 @@ class Individual
 			 	pi			= 0x0200,  //512
 			 	alpha		= 0x0400,  //1024
 			 	pinv		= 0x0800,  //2048
+				subsetRate	= 0x4000,	//16384
 			 	muScale		= 0x10000, //65536
 	#ifdef GANESH
                 randPECR    = 0x4000,  //16384                
@@ -72,12 +73,13 @@ class Individual
 			 	anyTopo		= (randNNI | randSPRCon | randSPR | limSPR 
 			 		 | limSPRCon | randRecom | bipartRecom | taxonSwap | subtreeRecom ) ,
 #endif
-			 	anyModel	= rates | pi | alpha | pinv | muScale
+			 	anyModel	= rates | pi | alpha | pinv | muScale | subsetRate
 			 	};
 		int mutated_brlen;//the number of brlen muts
 		bool accurateSubtrees;
 
-		Model *mod;
+		//Model *mod;
+		ModelPartition modPart;
 		
 		Tree *treeStruct;
 
@@ -99,7 +101,7 @@ class Individual
 			dirty=false;
 			}
 		void GetStartingConditionsFromFile(const char *fname, int rank, int nTax, bool restart=false);
-		void GetStartingTreeFromNCL(const NxsTreesBlock *treesblock, int rank, int nTax, bool restart=false);
+		void GetStartingTreeFromNCL(NxsTreesBlock *treesblock, int rank, int nTax, bool restart=false);
 		void RefineStartingConditions(bool optModel, FLOAT_TYPE branchPrec);
 		void CalcFitness(int subtreeNode);
 		void ReadTreeFromFile(istream & inf);
@@ -116,7 +118,6 @@ class Individual
 		void CopyByStealingTree(Individual* ind );
 		void CopySecByStealingFirstTree(Individual * sourceOfTreePtr, const Individual *sourceOfInformation);
 		void CopySecByRearrangingNodesOfFirst(Tree * sourceOfTreePtr, const Individual *sourceOfInformation, bool CLAassigned=false);
-		void DuplicateIndivWithoutCLAs(const Individual *sourceOfInformation);
 		void ResetIndiv();
 		void MakeRandomTree(int nTax);
 		void MakeStepwiseTree(int nTax, int attemptsPerTaxon, FLOAT_TYPE optPrecision );
@@ -142,7 +143,7 @@ inline void Individual::CrossOverWith( Individual& so , FLOAT_TYPE optPrecision)
 	#ifdef BIPART_BASED_RECOM
 	//this will return -1 if no recombination actually occured
 	int x=-1;
-	x=treeStruct->BipartitionBasedRecombination(so.treeStruct, mod->IsModelEqual(so.mod), optPrecision);
+	x=treeStruct->BipartitionBasedRecombination(so.treeStruct, modPart.IsModelPartitionEqual(&so.modPart), optPrecision);
 	//if we don't find a bipart based recom that does much good, do a normal one
 	if(x==-1){
 		/*

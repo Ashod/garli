@@ -37,21 +37,9 @@ noinst_HEADERS = \
 	translatetable.h \
 	tree.h \
 	treenode.h \
-	utility.h \
-	cudaman.h \
-	cudakernel.cu
-
-if CUDASOURCE
-.cu.o:
-	$(NVCC) -o $@ -c $< $(NVCCFLAGS)
-
-CUDASRCS = \
-	cudainterface.cu \
-	cudaman.cpp 
-endif
+	utility.h 
 
 Garli_SOURCES = \
-	$(CUDASRCS) \
 	adaptation.cpp \
 	bipartition.cpp \
 	condlike.cpp \
@@ -74,17 +62,13 @@ Garli_SOURCES = \
 	translatetable.cpp \
 	tree.cpp \
 	treenode.cpp \
-	mpitrick.cpp 
+	mpitrick.cpp
 
 
 Garli_LDADD =  $(LDADD) @GARLI_LIBS@
 
 install-exec-hook:
 	cd $(DESTDIR)$(bindir) && \
-	  mv -f Garli$(EXEEXT) Garli-$(VERSION)$(EXEEXT) && \
-	  $(LN_S) Garli-$(VERSION)$(EXEEXT) Garli$(EXEEXT)
-uninstall:
-	test "$(DESTDIR)$(bindir)/Garli$(EXEEXT)" -ef "$(DESTDIR)$(bindir)/Garli-$(VERSION)$(EXEEXT)" && rm "$(DESTDIR)$(bindir)/Garli$(EXEEXT)" || true
-	rm -f "$(DESTDIR)$(bindir)/Garli-$(VERSION)$(EXEEXT)"
-	
-	
+	  mv -f Garli$(EXEEXT) Garli-Part-$(VERSION)$(EXEEXT) && \
+	  $(LN_S) Garli-Part-$(VERSION)$(EXEEXT) Garli$(EXEEXT)
+

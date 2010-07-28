@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -19,14 +19,10 @@
 #ifndef DEFS
 #define DEFS
 
-#if defined(HAVE_CONFIG_H)
-	#include "config.h"
-#endif
-
 //these will be defined by either the Microsoft compiler
 //or the intel compiler when openmp support is turned on
 //by compiling with /openmp (ms) or -openmp (icc)
-//Nothing else should need to be defined anywhere to get
+//Nothing else should need to be defined anywhere to get 
 //openMP working
 #if defined (__OPENMP) || defined (_OPENMP)
 	#include "omp.h"
@@ -35,7 +31,7 @@
 	#define OMP_INTTERMCLA
 	#define OMP_TERMDERIV
 	#define OMP_INTDERIV
-
+	
 	#define OMP_INTINTCLA_NSTATE
 	#define OMP_INTTERMCLA_NSTATE
 	#define OMP_TERMDERIV_NSTATE
@@ -50,54 +46,37 @@
 #endif
 */
 
-//#undef CUDA_GPU
-//#ifdef CUDA_GPU
-//	#define CUDA_MEMORY_PINNED
-//#endif
-
-#ifdef CUDA_GPU
-	#define CUDA_TEST_ITERATIONS 10
-	#define CUDA_PRINT_TESTS 0
-	#define CUDA_PRINT_DEVICE_QUERY 0
-#endif
+#define MORE_DETERM_OPT
 
 #define USE_COUNTS_IN_BOOT
 
-//#undef OPT_DEBUG
+#undef OPT_DEBUG
 
 //The ONLY thing that should need to be done to turn on memcheck leak detection
-//should be defining MONITORING_ALLOCATION 
-//#undef MONITORING_ALLOCATION
+//should be defining MONITORING_ALLOCATION here
+#undef MONITORING_ALLOCATION
 #include "memchk.h"
-
-//7-09 A few newer features now made permanant after testing
-#define ADAPTIVE_BOUNDED_OPT
-#define MORE_DETERM_PARAM_OPT
-#define PUSH_TO_MIN_BLEN
-#define FINAL_RESTORE_BLENS
-#define OPT_BOUNDED_RESTORE
-#define SUM_AA_REL_RATES
-#define NEW_BUMPING
-#define ALT_NR_BAIL
 
 #define CONSTRAINTS
 #define STOCHASTIC_STARTING_BLENS
 #undef IGNORE_SMALL_TOPO_IMP
 #undef INCLUDE_PERTURBATION
 #undef SUBTREE_VERSION
-//#undef ENABLE_CUSTOM_PROFILER
-//#undef SINGLE_PRECISION_FLOATS
-//#undef SWAP_BASED_TERMINATION
+#undef ENABLE_CUSTOM_PROFILER
+#undef SINGLE_PRECISION_FLOATS
+#undef SWAP_BASED_TERMINATION
 
-//#undef OUTPUT_UNIQUE_TREES
+#undef OUTPUT_UNIQUE_TREES
 #undef VARIABLE_OPTIMIZATION
 
 #undef INPUT_RECOMBINATION
 #define NUM_INPUT 12
 
-//#undef ALLOW_SINGLE_SITE
+#undef ALLOW_SINGLE_SITE
 
 #undef EQUIV_CALCS
+
+#define FACTORY
 
 typedef double MODEL_FLOAT;
 
@@ -109,11 +88,6 @@ typedef double MODEL_FLOAT;
 	#define DEF_MIN_BRLEN 1e-8f
 	#define DEF_MAX_BRLEN 100.0f
 	#define DEF_STARTING_BRLEN 0.05f
-	#define GARLI_FP_EPS FLT_EPSILON
-	#define LUMP_LIKES
-	#if !defined(LUMP_FREQ)
-		#define LUMP_FREQ 400
-	#endif
 #else
 	typedef double FLOAT_TYPE;
 	#define ONE_POINT_ZERO 1.0
@@ -122,7 +96,6 @@ typedef double MODEL_FLOAT;
 	#define DEF_MIN_BRLEN 1e-8
 	#define DEF_MAX_BRLEN 100.0
 	#define DEF_STARTING_BRLEN 0.05
-	#define GARLI_FP_EPS DBL_EPSILON
 #endif
 
 #define MAXPATH   		256

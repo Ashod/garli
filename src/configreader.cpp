@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -179,6 +179,13 @@ int ConfigReader::SetSection(const char* name)	{
 		return -1;
 	return 0;
 }
+
+/****************************************************************************************/
+/*** GetSection() ***/
+/****************************************************************************************/
+const string ConfigReader::GetCurrentSection()	{
+	return cur_section;
+	}
 
 /****************************************************************************************/
 /*** SetOption() ***/

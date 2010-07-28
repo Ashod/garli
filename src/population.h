@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -290,8 +290,7 @@ private:
 
 	FLOAT_TYPE bestFitness;
 	FLOAT_TYPE prevBestFitness;
-	FLOAT_TYPE tot_fraction_done;
-	FLOAT_TYPE rep_fraction_done;//make sure this remains the last scalar in the class for checkpointing to work
+	FLOAT_TYPE fraction_done;//make sure this remains the last scalar in the class for checkpointing to work
 
 public:
 	GeneralGamlConfig *conf;
@@ -302,7 +301,6 @@ public:
 private:
 
 	Individual* newindiv;
-
 	vector<int> subtreeMemberNodes;
 
 #ifdef INCLUDE_PERTURBATION
@@ -312,7 +310,7 @@ private:
 		
 	//DJZ adding these streams directly to the class so that they can be opened once and left open
 	ofstream fate;
-	ofstream scoreLog;
+	ofstream log;
 	ofstream treeLog;
 	ofstream probLog;
 	ofstream bootLog;
@@ -323,13 +321,7 @@ private:
 	char *treeString;
 	int stringSize;
 
-	//if the user killed the run
-	bool userTermination;
-	//specified stoptime was reached.  Use of this really isn't recommended
-	bool timeTermination;
-	//specified stoptime was reached.  Note that this is PER REP, so it can be reset.
-	//the other term types cannot
-	bool genTermination;
+	bool prematureTermination;//if the user killed the run
 	bool finishedRep;//when a single search replicate is finished (not a bootstrap rep)
 
 	vector<Tree *> unusedTrees;
@@ -343,11 +335,6 @@ private:
 	bool usedNCL;
 	bool startingTreeInNCL;
 	bool startingModelInNCL;
-	//this is the number of generations that the run must continue without finding
-	//a new better swap to terminate, on top of other stopping conditions, default=0
-	//if it is NEGATIVE, then abs(this) superseeds all other term cond and only this 
-	//must be met. set in conf with swaptermthreshold = #
-	int swapTermThreshold;
 
 	enum output_details {
 		DONT_OUTPUT = 0,
@@ -382,9 +369,9 @@ private:
 	FLOAT_TYPE** cumfit;//allocated in setup, deleted in dest
 		
 	TopologyList **topologies;//allocated in Setup(), deleted in dest
-			
-	SequenceData* data;
-	SequenceData* rawData;//this will hold the original data as read in, before it might be converted
+	
+	DataPartition *dataPart;
+	DataPartition *rawPart;//this will hold the original data as read in, before it might be converted
 					//to codons or aminoacid
 
 	Stopwatch stopwatch;
@@ -399,9 +386,9 @@ private:
 			bestFitness(-(FLT_MAX)), bestIndiv(0), currentSearchRep(1), 
 			prevBestFitness(-(FLT_MAX)),indiv(NULL), newindiv(NULL),
 			cumfit(NULL), gen(0), paraMan(NULL), subtreeDefNumber(0), claMan(NULL), 
-			treeString(NULL), adap(NULL), rep_fraction_done(ZERO_POINT_ZERO), tot_fraction_done(ZERO_POINT_ZERO),
-			topologies(NULL), userTermination(false), timeTermination(false), genTermination(false), currentBootstrapRep(0),
-			finishedRep(false), lastBootstrapSeed(0), data(NULL), rawData(NULL), swapTermThreshold(0)
+			treeString(NULL), adap(NULL), fraction_done(ZERO_POINT_ZERO),
+			topologies(NULL), prematureTermination(false), currentBootstrapRep(0),
+			finishedRep(false), lastBootstrapSeed(0), dataPart(NULL), rawPart(NULL)
 #ifdef INCLUDE_PERTURBATION			 
 			pertMan(NULL), allTimeBest(NULL), bestSinceRestart(NULL),
 #endif
@@ -439,12 +426,12 @@ private:
 
 		void ReadPopulationCheckpoint();
 		void WriteStateFiles();
-		bool ReadStateFiles();
+		void ReadStateFiles();
 		void GetConstraints();
-		void WriteTreeFile( const char* treefname, int indnum, bool collapse = false);
+		void WriteTreeFile( const char* treefname, int indnum = -1);
 		void WritePhylipTree(ofstream &phytree);
 
-		void Setup(GeneralGamlConfig *conf, SequenceData *, int nprocs = 1, int rank = 0);
+		void Setup(GeneralGamlConfig *conf, DataPartition *, DataPartition *, int nprocs = 1, int rank = 0);
 		void Reset();
 		int Restart(int type, int rank, int nprocs, int restart_count);
 		void SeedPopulationWithStartingTree(int rep);//mult rep change
@@ -454,12 +441,11 @@ private:
 		void DetermineParentage();
 		void FindTreeStructsForNextGeneration();
 		void PerformMutation(int indNum);
-		void UpdateFractionDone(int phase);
+		void UpdateFractionDone();
 		bool OutgroupRoot(Individual *ind, int indnum);
 		void LoadNexusStartingConditions();
 		void VariableStartingTreeOptimization(bool reducing);
 		void OptimizeSiteRates();
-		void OptimizeInputAndWriteSitelikelihoods();
 
 		int IsError() const { return error; }
 		void ErrorMsg( char* msgstr, int len );
@@ -548,15 +534,12 @@ private:
 		void AssignNewTopology(Individual *ind, int indNum);
 		void FindLostClas();
 		void FinalOptimization();
+		void BetterFinalOptimization();
 		void ResetMemLevel(int numNodesPerIndiv, int numClas);
 		void SetNewBestIndiv(int indivIndex);
 		void LogNewBestFromRemote(FLOAT_TYPE, int);
 		void CheckRemoteReplaceThresh();
 		void TurnOffRatchet();
 		unsigned Gen()const {return gen;}
-		void ValidateInput(int rep);
-		string TerminationWarningMessage(){
-			return string("\nNOTE: ***Search was terminated before full auto-termination condition was reached!\nLikelihood scores, topologies and model estimates obtained may not be fully optimal!***\n");
-			}
 	};
 #endif

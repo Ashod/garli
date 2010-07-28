@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -58,7 +58,7 @@ Individual::Individual() : dirty(1), fitness(0.0),
 	mutation_type(0), accurateSubtrees(0){
 	 
  	treeStruct=NULL;
-	mod=new Model();
+//	mod=new Model();
 	}
 
 Individual::Individual(const Individual *other) : 
@@ -67,7 +67,7 @@ Individual::Individual(const Individual *other) :
 	willrecombine(false), recombinewith(-1), topo(-1), mutated_brlen(0), 
 	mutation_type(0), accurateSubtrees(0){
 
-	mod=new Model();
+	//mod=new Model();
 	treeStruct=new Tree();
 
 	CopyNonTreeFields(other);
@@ -75,13 +75,13 @@ Individual::Individual(const Individual *other) :
 	treeStruct->MimicTopo(other->treeStruct);
 	dirty=false;
 	treeStruct->lnL=other->fitness;
-	treeStruct->mod=mod;
+	treeStruct->modPart = &modPart;
 	}
 
 Individual::~Individual(){
 	if(treeStruct!=NULL)
 		delete treeStruct;
-	if(mod!=NULL) delete mod;
+	//if(mod!=NULL) delete mod;
 	}
 
 void Individual::CopySecByStealingFirstTree(Individual * sourceOfTreePtr, const Individual *sourceOfInformation){
@@ -104,21 +104,8 @@ void Individual::CopySecByRearrangingNodesOfFirst(Tree * sourceOfTreePtr, const 
 	treeStruct->CopyClaIndeces(sourceOfInformation->treeStruct,CLAassigned);
 	dirty=false;
 	treeStruct->lnL=sourceOfInformation->fitness;
-	treeStruct->mod=mod;
-	}
-
-void Individual::DuplicateIndivWithoutCLAs(const Individual *sourceOfInformation){
-	CopyNonTreeFields(sourceOfInformation);
-	if(treeStruct == NULL)
-		treeStruct = new Tree;
-
-	for(int i=treeStruct->getNumTipsTotal()+1;i<(2*treeStruct->getNumTipsTotal()-2);i++)
-		treeStruct->allNodes[i]->attached=false;
-		
-	treeStruct->MimicTopo(sourceOfInformation->treeStruct);
-	dirty=true;
-	treeStruct->lnL=sourceOfInformation->fitness;
-	treeStruct->mod=mod;
+	modPart.CopyModelPartition(&sourceOfInformation->modPart);
+	treeStruct->modPart = &modPart;
 	}
 
 void Individual::Mutate(FLOAT_TYPE optPrecision, Adaptation *adap){
@@ -188,19 +175,29 @@ void Individual::Mutate(FLOAT_TYPE optPrecision, Adaptation *adap){
 	
 	//model mutations
 	else if( r < adap->modelMutateProb + adap->topoMutateProb){
-		mutation_type |= mod->PerformModelMutation();
+		mutation_type |= modPart.PerformModelMutation();
 		treeStruct->MakeAllNodesDirty();
 		dirty = true;
 		}
 
 	//be sure that we have an accurate score before any CLAs get invalidated
 	CalcFitness(0);
+
+/*	FLOAT_TYPE lnL = fitness;
+	dirty = true;
+	treeStruct->MakeAllNodesDirty();
+	CalcFitness(0);
+	if(!FloatingPointEquals(lnL, fitness, 1e-3)){
+		outman.UserMessage("DEBUG - scoring problem:%f vs %f", lnL, fitness);
+		//throw ErrorException("DEBUG - scoring problem:%f vs %f", lnL, fitness);
+		}
+*/
 //	treeStruct->calcs=calcCount;
 //	calcCount=0;
 }
 
 void Individual::CalcFitness(int subtreeNode){
-	if(dirty || FloatingPointEquals(treeStruct->lnL, ZERO_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0)) || FloatingPointEquals(treeStruct->lnL, -ONE_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2))){
+	if(dirty || FloatingPointEquals(treeStruct->lnL, ZERO_POINT_ZERO, 1e-8) || FloatingPointEquals(treeStruct->lnL, -ONE_POINT_ZERO, 1e-8)){
 		if(subtreeNode>0 && accurateSubtrees==true){
 			treeStruct->Score( subtreeNode );
 			}
@@ -263,11 +260,13 @@ void Individual::MakeRandomTree(int nTax){
 
 void Individual::MakeStepwiseTree(int nTax, int attachesPerTaxon, FLOAT_TYPE optPrecision ){
 	treeStruct=new Tree();
+	treeStruct->modPart = &modPart;
 	treeStruct->AssignCLAsFromMaster();
 
 	Individual scratchI;
 	scratchI.treeStruct=new Tree();
 	Tree *scratchT = scratchI.treeStruct;
+	scratchT->modPart = &scratchI.modPart;
 	scratchT->AssignCLAsFromMaster();
 	scratchI.CopySecByRearrangingNodesOfFirst(scratchT, this, true);
 
@@ -355,7 +354,7 @@ void Individual::MakeStepwiseTree(int nTax, int attachesPerTaxon, FLOAT_TYPE opt
 		FLOAT_TYPE bestScore = scratchT->lnL;
 		
 		//collect reconnection points - this will automatically filter for constraints
-		scratchT->GatherValidReconnectionNodes(scratchT->data->NTax()*2, added, NULL, &mask);
+		scratchT->GatherValidReconnectionNodes(scratchT->NTax()*2, added, NULL, &mask);
 		
 //			stepout << i << "\t" << k << "\t" << bestScore << "\t";
 
@@ -407,32 +406,38 @@ void Individual::MakeStepwiseTree(int nTax, int attachesPerTaxon, FLOAT_TYPE opt
 		outman.flush();
 		//when we've added half the taxa optimize alpha, flex or omega 
 		if(i == (n/2)){
-			if((modSpec.IsCodon() || mod->NRateCats() > 1) && modSpec.fixAlpha == false){
-				FLOAT_TYPE rateOptImprove = 0.0;
-				if(modSpec.IsCodon()){//optimize omega even if there is only 1
-					if(!modSpec.fixOmega)
-						rateOptImprove = scratchT->OptimizeOmegaParameters(optPrecision);
-					}
+			FLOAT_TYPE improve = 0.0;
+			for(int modnum = 0;modnum < modPart.NumModels();modnum++){
+				Model *mod = scratchI.modPart.GetModel(modnum);
+				const ModelSpecification *modSpec = mod->GetCorrespondingSpec();
+				if(modSpec->IsCodon())//optimize omega even if there is only 1
+					improve += scratchT->OptimizeOmegaParameters(optPrecision, modnum);
 				else if(mod->NRateCats() > 1){
-					if(modSpec.IsFlexRateHet()){//Flex rates
-						rateOptImprove = ZERO_POINT_ZERO;
-						//for the first pass, use gamma to get in the right ballpark
-						//rateOptImprove = scratchT->OptimizeAlpha(optPrecision);
-						rateOptImprove = treeStruct->OptimizeBoundedParameter(optPrecision, mod->Alpha(), 0, 0.1, 999.9, &Model::SetAlpha);
-						rateOptImprove += scratchT->OptimizeFlexRates(optPrecision);
+					if(modSpec->IsFlexRateHet()){//Flex rates
+						//no longer doing alpha first, it was too hard to know if the flex rates had been partially optimized
+						//already during making of a stepwise tree
+						improve += scratchT->OptimizeFlexRates(optPrecision, modnum);
 						}
-					else if(modSpec.fixAlpha == false){//normal gamma
-						//rateOptImprove = scratchT->OptimizeAlpha(optPrecision);
-						rateOptImprove = treeStruct->OptimizeBoundedParameter(optPrecision, mod->Alpha(), 0, 0.05, 999.9, &Model::SetAlpha);
+					else if(modSpec->fixAlpha == false){//normal gamma
+						//do NOT let alpha go too low here - on bad or random starting trees the branch lengths get crazy long
+						improve += scratchT->OptimizeBoundedParameter(optPrecision, mod->Alpha(), 0, 0.05, 999.9, modnum, &Model::SetAlpha);
 						}
 					}
-				outman.UserMessageNoCR("\nOptimizing parameters... improved %.3f lnL", rateOptImprove);
+				if(modSpec->includeInvariantSites && !modSpec->fixInvariantSites)
+					improve += scratchT->OptimizeBoundedParameter(optPrecision, mod->PropInvar(), 0, 1.0e-8, mod->maxPropInvar, modnum, &Model::SetPinv);
 				}
-			scratchT->Score();
-			FLOAT_TYPE start=scratchT->lnL;
-			scratchT->OptimizeAllBranches(optPrecision);
-			FLOAT_TYPE bimprove = scratchT->lnL - start;
-			outman.UserMessage("\nOptimizing branchlengths... improved %.3f lnL", bimprove);
+			if(modSpecSet.InferSubsetRates()){
+				improve += scratchT->OptimizeSubsetRates(optPrecision);
+				}
+			if(!FloatingPointEquals(improve, 0.0, 1e-8)) outman.UserMessage("\n   Optimizing parameters...    improved %8.3f lnL", improve);
+		//	this used to depend on param improvement - not sure why
+		//	if(rateOptImprove > 0.0){
+				scratchT->Score();
+				FLOAT_TYPE start=scratchT->lnL;
+				scratchT->OptimizeAllBranches(optPrecision);
+				FLOAT_TYPE bimprove = scratchT->lnL - start;
+				outman.UserMessage("\nOptimizing branchlengths... improved %f lnL", bimprove);
+	//			}
 			}
 		}		
 
@@ -441,18 +446,6 @@ void Individual::MakeStepwiseTree(int nTax, int attachesPerTaxon, FLOAT_TYPE opt
 	scratchI.treeStruct->RemoveTreeFromAllClas();
 	delete scratchI.treeStruct;
 	scratchI.treeStruct=NULL;
-
-#ifndef NDEBUG
-	for(vector<Constraint>::iterator conit=treeStruct->constraints.begin();conit!=treeStruct->constraints.end();conit++){
-		TreeNode *check = NULL;
-		if((*conit).IsBackbone())
-			check = treeStruct->ContainsMaskedBipartitionOrComplement(*(*conit).GetBipartition(), *(*conit).GetBackboneMask());
-		else
-			check = treeStruct->ContainsBipartitionOrComplement(*(*conit).GetBipartition());
-		if((*conit).IsPositive()) assert(check != NULL);
-		else assert(check == NULL);
-		}
-#endif
 	}
 
 
@@ -541,6 +534,8 @@ void Individual::GetStartingConditionsFromFile(const char* fname, int rank, int 
 	//foundRmat=foundStateFreqs=foundAlpha=foundPinv = false;
 	
 	if(foundModel == true){
+		if(modPart.NumModels() > 1)
+			throw ErrorException("Specification of model parameter values is not yet supported with partitioned models");
 		string modString;
 		do{
 			c=stf.get();
@@ -548,7 +543,7 @@ void Individual::GetStartingConditionsFromFile(const char* fname, int rank, int 
 			//}while(c != '(' && c != '\r' && c != '\n' && !stf.eof());
 			}while(stf.peek() != '(' && stf.peek() != '\r' && stf.peek() != '\n' && !stf.eof());
 		while((stf.peek() == '\n' || stf.peek() == '\r') && stf.eof() == false) stf.get(c);
-		mod->ReadGarliFormattedModelString(modString);
+		modPart.GetModelSet(0)->GetModel(0)->ReadGarliFormattedModelString(modString);
 		}
 
 	if(foundTree==true){
@@ -561,16 +556,9 @@ void Individual::GetStartingConditionsFromFile(const char* fname, int rank, int 
 			}while(c != '\n' && c!= '\r' && stf.eof() == false);
 		while((stf.peek() == '\n' || stf.peek() == '\r') && stf.eof() == false) stf.get(c);
 
-		//the call to the tree constructor can change the seed because random branch lengths are generated when the tree doesn't
-		//have them.  So, store and restore the seed, mainly for output purposes (the seed output to the screen happens after this
-		//call
-		int seed = rnd.seed();
-
 		//now allowing polytomies, since they will be taken care of in Population::SeedPopulationWithStartingTree
 		treeStruct=new Tree(treeString.c_str(), numericalTaxa, true);
 		//treeStruct=new Tree(treeString.c_str(), numericalTaxa);
-
-		rnd.set_seed(seed);
 
 		//check that any defined constraints are present in the starting tree
 		int conNum=1;
@@ -611,7 +599,9 @@ void Individual::GetStartingConditionsFromFile(const char* fname, int rank, int 
 */			}
 		else{
 			//this checks whether we have already gotten some parameter values from file, which might have come from a garli block in the datafile
-			if(!(modSpec.GotAnyParametersFromFile())){
+			//PARTITION
+			if(!(modSpecSet.GetModSpec(0)->GotAnyParametersFromFile())){
+			//if(!(modSpec->GotAnyParametersFromFile())){
 				outman.UserMessage("No starting model parameter values found in %s\nUsing default parameter values", fname);
 /*				string m;
 				mod->FillGarliFormattedModelString(m);
@@ -622,32 +612,26 @@ void Individual::GetStartingConditionsFromFile(const char* fname, int rank, int 
 		outman.UserMessage("");
 		}
 
-	mod->UpdateQMat();
+	for(int m=0;m < modPart.NumModels();m++){
+		modPart.GetModel(m)->UpdateQMat();
+		}
 	stf.close();
 	delete []temp;
 	}
 
-void Individual::GetStartingTreeFromNCL(const NxsTreesBlock *treesblock, int rank, int nTax, bool restart /*=false*/){
+void Individual::GetStartingTreeFromNCL(NxsTreesBlock *treesblock, int rank, int nTax, bool restart /*=false*/){
 	assert(treeStruct == NULL);
 
 	int totalTrees = treesblock->GetNumTrees();
 
 	int effectiveRank = rank % totalTrees;
 	
-	//the call to the tree constructor can change the seed because random branch lengths are generated when the tree doesn't
-	//have them.  So, store and restore the seed, mainly for output purposes (the seed output to the screen happens after this
-	//call
-	int seed = rnd.seed();
-
-	//we will get the tree string from NCL with taxon numbers (starting at 1), regardless of how it was initially read in 
-	const NxsFullTreeDescription &t = treesblock->GetFullTreeDescription(effectiveRank);
-	if(t.AllTaxaAreIncluded() == false)
-		throw ErrorException("Starting tree description must contain all taxa.");
-	string ts = t.GetNewick();
-	ts += ";";
-	treeStruct=new Tree(ts.c_str(), true, true);
-
-	rnd.set_seed(seed);
+	//we will get the tree string from NCL with names rather than numbers, regardless of how it was initially read in 
+	NxsString treestr = treesblock->GetTranslatedTreeDescription(effectiveRank);
+	treestr.BlanksToUnderscores();
+	
+	treeStruct=new Tree(treestr.c_str(), false, true);
+	//treeStruct=new Tree(treesblock->GetTreeDescription(effectiveRank).c_str(), false);
 
 	//check that any defined constraints are present in the starting tree
 	int conNum=1;
@@ -662,42 +646,52 @@ void Individual::GetStartingTreeFromNCL(const NxsTreesBlock *treesblock, int ran
 		}
 	treeStruct->AssignCLAsFromMaster();
 
-	mod->UpdateQMat();
+	for(int m=0;m < modPart.NumModels();m++){
+		modPart.GetModel(m)->UpdateQMat();
+		}
 	}
 
 void Individual::RefineStartingConditions(bool optModel, FLOAT_TYPE branchPrec){
-	//if(optModel && mod->NRateCats() > 1 && modSpec.IsNonsynonymousRateHet() == false && modSpec.gotFlexFromFile == false) outman.UserMessage("optimizing starting branch lengths and rate heterogeneity parameters...");
-	//else if(modSpec.IsCodon()) outman.UserMessage("optimizing starting branch lengths and dN/dS (aka omega) parameters...");
-	if(optModel) outman.UserMessage("optimizing starting branch lengths and model parameters...");
-	else outman.UserMessage("optimizing starting branch lengths...");
-	FLOAT_TYPE improve=(FLOAT_TYPE)999.9;
-	CalcFitness(0);
-	bool optOmega, optAlpha, optFlex, optPinv, optFreqs, optRelRates;
-	optOmega = optAlpha = optFlex = optPinv = optFreqs = optRelRates = false;
+	bool optOmega, optAlpha, optFlex, optPinv, optFreqs, optRelRates, optSubsetRates;
+	optOmega = optAlpha = optFlex = optPinv = optFreqs = optRelRates = optSubsetRates = false;
+
 	if(optModel){
-		if(modSpec.IsCodon() && !modSpec.fixOmega)
-			optOmega = true;
-		else if(modSpec.numRateCats > 1 && !modSpec.IsCodon()){
-			if(modSpec.IsFlexRateHet())
-				optFlex = true;
-			else if(modSpec.fixAlpha == false)
-				optAlpha = true;
-			}
-		if(modSpec.includeInvariantSites && !modSpec.fixInvariantSites)
-			optPinv = true;
-#ifdef MORE_DETERM_PARAM_OPT
-		if(modSpec.IsCodon() == false && modSpec.fixStateFreqs == false && modSpec.IsEqualStateFrequencies() == false && modSpec.IsEmpiricalStateFrequencies() == false)
-			optFreqs = true;
-		//this is the case of forced freq optimization with codon models.  For everything to work they must be set as both not fixed but empirical
-		if(modSpec.IsCodon() && modSpec.fixStateFreqs == false && modSpec.IsEqualStateFrequencies() == false && modSpec.IsEmpiricalStateFrequencies() == true)
-			optFreqs = true;
-		if(modSpec.fixRelativeRates == false && (modSpec.Nst() > 1 || (modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix())))
-			optRelRates = true;
+		for(int modnum = 0;modnum < modPart.NumModels();modnum++){
+			Model *mod = modPart.GetModel(modnum);
+			const ModelSpecification *modSpec = mod->GetCorrespondingSpec();
+			if(modSpec->numRateCats > 1 && modSpec->IsNonsynonymousRateHet() == false && modSpec->IsFlexRateHet() == false) optAlpha = true;
+			if(modSpec->IsFlexRateHet()) optFlex = true;
+			if(modSpec->includeInvariantSites && modSpec->fixInvariantSites == false) optPinv = true;
+			if(modSpec->IsCodon()) optOmega = true;
+
+#ifdef MORE_DETERM_OPT
+			if(modSpec->IsCodon() == false && modSpec->fixStateFreqs == false && modSpec->IsEqualStateFrequencies() == false && modSpec->IsEmpiricalStateFrequencies() == false)
+				optFreqs = true;
+			if(modSpec->fixRelativeRates == false && (modSpec->Nst() > 1))
+				optRelRates = true;
 #endif
+
+			}
+		if(modSpecSet.InferSubsetRates() && modSpecSet.NumSpecs() > 1)
+			optSubsetRates = true;
 		}
 
+	outman.UserMessageNoCR("optimizing: starting branch lengths");
+	if(optAlpha) outman.UserMessageNoCR(", alpha shape");
+	if(optPinv) outman.UserMessageNoCR(", prop. invar");
+#ifdef MORE_DETERM_OPT
+	if(optRelRates) outman.UserMessageNoCR(", rel rates");
+	if(optFreqs) outman.UserMessageNoCR(", eq freqs");
+#endif
+	if(optOmega) outman.UserMessageNoCR(", dN/dS (aka omega) parameters");
+	if(optSubsetRates) outman.UserMessageNoCR(", subset rates");
+	outman.UserMessage("...");
+	FLOAT_TYPE improve=(FLOAT_TYPE)999.9;
+	CalcFitness(0);
+
 	for(int i=1;improve > branchPrec;i++){
-		FLOAT_TYPE rateOptImprove=0.0, pinvOptImprove = 0.0, optImprove=0.0, scaleImprove=0.0, freqOptImprove=0.0, nucRateOptImprove=0.0;
+		FLOAT_TYPE alphaOptImprove=0.0, pinvOptImprove = 0.0, omegaOptImprove = 0.0, flexOptImprove = 0.0, optImprove=0.0, scaleOptImprove=0.0, subsetRateImprove=0.0, rateOptImprove=0.0;
+		FLOAT_TYPE freqOptImprove=0.0;
 		
 		CalcFitness(0);
 		FLOAT_TYPE passStart=Fitness();
@@ -709,58 +703,65 @@ void Individual::RefineStartingConditions(bool optModel, FLOAT_TYPE branchPrec){
 		assert(trueImprove >= -1.0);
 		if(trueImprove < ZERO_POINT_ZERO) trueImprove = ZERO_POINT_ZERO;
 
-		vector<FLOAT_TYPE> blens;
-		treeStruct->StoreBranchlengths(blens);
-		scaleImprove=treeStruct->OptimizeTreeScale(branchPrec);
-		CalcFitness(0);
-		//if some of the branch lengths were at the minimum or maximum boundaries the scale optimization
-		//can actually worsen the score.  If so, return them to their original lengths.
-		if(scaleImprove < ZERO_POINT_ZERO){
-			treeStruct->RestoreBranchlengths(blens);
-			CalcFitness(0);
-			scaleImprove = ZERO_POINT_ZERO;
-			}
+		scaleOptImprove=treeStruct->OptimizeTreeScale(branchPrec);
+		//if some of the branch lengths are at the minimum or maximum boundaries the scale optimization
+		//can actually worsen the score.  This isn't particularly important during initial refinement,
+		//so just hide it to keep the user from thinking that there is something terribly wrong
+		if(scaleOptImprove < ZERO_POINT_ZERO) scaleOptImprove = ZERO_POINT_ZERO;
 
 		CalcFitness(0);
-		//if there are still massive score changes due to blens, don't mess with the other params yet because their lnL surfaces
-		//can be rather numerically unstable.
-		if(optModel && (scaleImprove + trueImprove) < 1000.0){
-			if(optOmega)//optimize omega even if there is only 1
-				rateOptImprove = treeStruct->OptimizeOmegaParameters(branchPrec);
-			else if(mod->NRateCats() > 1 && !modSpec.IsCodon()){
-				if(modSpec.IsFlexRateHet()){//Flex rates
-					rateOptImprove = ZERO_POINT_ZERO;
-					rateOptImprove += treeStruct->OptimizeFlexRates(branchPrec);
+		if(optModel){
+			for(int modnum = 0;modnum < modPart.NumModels();modnum++){
+				Model *mod = modPart.GetModel(modnum);
+				const ModelSpecification *modSpec = mod->GetCorrespondingSpec();
+				if(modSpec->IsCodon())//optimize omega even if there is only 1
+					omegaOptImprove += treeStruct->OptimizeOmegaParameters(branchPrec, modnum);
+				else if(mod->NRateCats() > 1){
+					if(modSpec->IsFlexRateHet()){//Flex rates
+						//no longer doing alpha first, it was too hard to know if the flex rates had been partially optimized
+						//already during making of a stepwise tree
+						//if(i == 1) rateOptImprove = treeStruct->OptimizeAlpha(branchPrec);
+						//if(i == 1 && modSpec.gotFlexFromFile==false) rateOptImprove = treeStruct->OptimizeBoundedParameter(branchPrec, mod->Alpha(), 0, 1.0e-8, 999.9, &Model::SetAlpha);
+						flexOptImprove += treeStruct->OptimizeFlexRates(branchPrec, modnum);
+						}
+					else if(modSpec->fixAlpha == false){//normal gamma
+						//rateOptImprove = treeStruct->OptimizeAlpha(branchPrec);
+						//do NOT let alpha go too low here - on bad or random starting trees the branch lengths get crazy long
+						//rateOptImprove = treeStruct->OptimizeBoundedParameter(branchPrec, mod->Alpha(), 0, 1.0e-8, 999.9, &Model::SetAlpha);
+						alphaOptImprove += treeStruct->OptimizeBoundedParameter(branchPrec, mod->Alpha(), 0, 0.05, 999.9, modnum, &Model::SetAlpha);
+						}
 					}
-				else if(modSpec.fixAlpha == false){//normal gamma
-					//do NOT let alpha go too low here - on bad or random starting trees the branch lengths get crazy long
-					rateOptImprove = treeStruct->OptimizeBoundedParameter(branchPrec, mod->Alpha(), 0, 0.05, 999.9, &Model::SetAlpha);
-					}
+				if(modSpec->includeInvariantSites && !modSpec->fixInvariantSites)
+					pinvOptImprove += treeStruct->OptimizeBoundedParameter(branchPrec, mod->PropInvar(), 0, 1.0e-8, mod->maxPropInvar, modnum, &Model::SetPinv);
+
+#ifdef MORE_DETERM_OPT
+				if(modSpec->IsCodon() == false && modSpec->fixStateFreqs == false && modSpec->IsEqualStateFrequencies() == false && modSpec->IsEmpiricalStateFrequencies() == false)
+					freqOptImprove += treeStruct->OptimizeEquilibriumFreqs(branchPrec, modnum);
+				if(modSpec->fixRelativeRates == false && (modSpec->Nst() > 1))
+					rateOptImprove += treeStruct->OptimizeRelativeNucRates(branchPrec, modnum);
+#endif
 				}
-			if(modSpec.includeInvariantSites && !modSpec.fixInvariantSites)
-				pinvOptImprove = treeStruct->OptimizeBoundedParameter(branchPrec, mod->PropInvar(), 0, 1.0e-8, mod->maxPropInvar, &Model::SetPinv);
-			if(optFreqs)
-				freqOptImprove = treeStruct->OptimizeEquilibriumFreqs(branchPrec);
-			if(optRelRates)
-				nucRateOptImprove = treeStruct->OptimizeRelativeNucRates(branchPrec);
+			if(optSubsetRates){
+				subsetRateImprove += treeStruct->OptimizeSubsetRates(branchPrec);
+				}
 			}
-		improve=scaleImprove + trueImprove + rateOptImprove + pinvOptImprove + freqOptImprove + nucRateOptImprove;
+		improve=scaleOptImprove + trueImprove + alphaOptImprove + pinvOptImprove + flexOptImprove + omegaOptImprove + subsetRateImprove;
 		outman.precision(8);
-		outman.UserMessageNoCR("pass %-2d: +%10.4f (branch=%7.2f scale=%6.2f", i, improve, trueImprove, scaleImprove);
-		if(optOmega) 
-			outman.UserMessageNoCR(" omega=%6.2f", rateOptImprove);
-		if(optAlpha) 
-			outman.UserMessageNoCR(" alpha=%6.2f", rateOptImprove);
-		if(optFlex) 
-			outman.UserMessageNoCR(" flex rates=%6.2f", rateOptImprove);
-		if(optPinv) 
-			outman.UserMessageNoCR(" pinv=%6.2f", pinvOptImprove);
-		if(optFreqs)
-			outman.UserMessageNoCR(" equil freqs=%6.2f", freqOptImprove);
-		if(optRelRates)
-			outman.UserMessageNoCR(" rel rates=%6.2f", nucRateOptImprove);
+		outman.UserMessageNoCR("pass%2d:+%9.3f (branch=%7.2f scale=%6.2f", i, improve, trueImprove, scaleOptImprove);
+		if(optOmega) outman.UserMessageNoCR(" omega=%6.2f", omegaOptImprove);
+		if(optAlpha) outman.UserMessageNoCR(" alpha=%6.2f", alphaOptImprove);
+
+#ifdef MORE_DETERM_OPT
+		if(optFreqs) outman.UserMessageNoCR(" freqs=%6.2f", freqOptImprove);
+		if(optRelRates) outman.UserMessageNoCR(" rel rates=%6.2f", rateOptImprove);
+#endif
+
+		if(optFlex) outman.UserMessageNoCR(" flex=%6.2f", flexOptImprove);
+		if(optPinv) outman.UserMessageNoCR(" pinv=%6.2f", pinvOptImprove);
+		if(optSubsetRates) outman.UserMessageNoCR(" subset rates=%6.2f", subsetRateImprove);
 		outman.UserMessage(")");
 		}
+
 	treeStruct->nodeOptVector.clear();
 	}
 
@@ -786,14 +787,11 @@ void Individual::ReadTreeFromFile(istream & inf)
 void Individual::CopyNonTreeFields(const Individual* ind ){
 	fitness = ind->fitness;
 	accurateSubtrees=ind->accurateSubtrees;
-	mod->CopyModel(ind->mod);
+	modPart.CopyModelPartition(&ind->modPart);
 	
 	dirty = ind->dirty;
 	topo=ind->topo;
 	}
-
-
-
 
 /* 7/21/06 needs to be fixed to correspond to changes in tree for constraints
 void Individual::SubtreeMutate(int subdomain, FLOAT_TYPE optPrecision, vector<int> const &subtreeMemberNodes, Adaptation *adap){

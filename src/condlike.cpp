@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -22,45 +22,30 @@
 #include "clamanager.h"
 #include "utility.h"
 
-#ifdef CUDA_GPU
-#include "cudaman.h"
-extern CudaManager *cudaman;
-#endif
-
 #undef ALIGN_CLAS
 #define CLA_ALIGNMENT 32
 
 CondLikeArray::~CondLikeArray(){
-	//don't want to delete shared CL from nodes.  Should only
-	//be called from Population level if CONDLIKE SHARED is defined
-	if( arr ){
+	//with partitioning, the entire allocation is managed and deleted by the
+	//condlikearrayset, so don't delete anything here
+	arr = NULL;
+	underflow_mult = NULL;
+/*	if( arr ){
 #ifndef ALIGN_CLAS
-#ifdef CUDA_GPU
-	if(cudaman->GetPinnedMemoryEnabled())
-		FreePinnedMemory(arr);
-	else
-#endif
 		delete []arr;
-
-
 #else
 		DeleteAlignedArray(arr);
 #endif
 		arr=NULL;
 		 }
 	if(underflow_mult!=NULL) delete []underflow_mult;
+*/
 }
 
 void CondLikeArray::Allocate( int nk, int ns, int nr /* = 1 */ ){
 	if( arr ){
 #ifndef ALIGN_CLAS
-#ifdef CUDA_GPU
-	if(cudaman->GetPinnedMemoryEnabled())
-		FreePinnedMemory(arr);
-	else
-#endif
 		delete []arr;
-
 #else
 		DeleteAlignedArray(arr);
 #endif
@@ -70,14 +55,7 @@ void CondLikeArray::Allocate( int nk, int ns, int nr /* = 1 */ ){
 	nsites = ns;
 	nstates = nk;
 #ifndef ALIGN_CLAS
-#ifdef CUDA_GPU
-if(cudaman->GetPinnedMemoryEnabled())
-	AllocatePinnedMemory((void**)&arr, sizeof(FLOAT_TYPE)*nk*nr*ns);
-else
-#endif
 	arr=new FLOAT_TYPE[nk*nr*ns];
-
-
 #else
 	arr = NewAlignedArray<FLOAT_TYPE>(nk*nr*ns, CLA_ALIGNMENT);
 #endif
@@ -93,30 +71,30 @@ else
 	}
 
 
-	CondLikeArray* ClaManager::AssignFreeCla(){
+	CondLikeArraySet* ClaManager::AssignFreeCla(){
 		#ifdef CLA_DEBUG
 		ofstream deb("cladebug.log", ios::app);
 		#endif
 
 		if(claStack.empty() == true) RecycleClas();
-
-		CondLikeArray *arr=claStack[claStack.size()-1];
-
+		
+		CondLikeArraySet *arr=claStack[claStack.size()-1];
+		
 		assert(arr != NULL);
 		claStack.pop_back();
 		if(numClas - (int)claStack.size() > maxUsed) maxUsed=numClas - (int)claStack.size();
-
+		
 		return arr;
 		}
 
 	void ClaManager::RecycleClas(){
 		int numReclaimed=0;
 		for(int i=0;i<numHolders;i++){
-			if(holders[i].theArray != NULL){
+			if(holders[i].theSet != NULL){
 				if(holders[i].GetReclaimLevel() == 2 && holders[i].tempReserved == false && holders[i].reserved == false){
-					claStack.push_back(holders[i].theArray);
+					claStack.push_back(holders[i].theSet);
 					holders[i].SetReclaimLevel(0);
-					holders[i].theArray=NULL;
+					holders[i].theSet=NULL;
 					numReclaimed++;
 					}
 				}
@@ -124,11 +102,11 @@ else
 			}
 		if(numReclaimed>10) return;
 		for(int i=0;i<numHolders;i++){
-			if(holders[i].theArray != NULL){
+			if(holders[i].theSet != NULL){
 				if((holders[i].GetReclaimLevel() == 1 && holders[i].tempReserved == false && holders[i].reserved == false)){
-					claStack.push_back(holders[i].theArray);
+					claStack.push_back(holders[i].theSet);
 					holders[i].SetReclaimLevel(0);
-					holders[i].theArray=NULL;
+					holders[i].theSet=NULL;
 					numReclaimed++;
 					}
 				}

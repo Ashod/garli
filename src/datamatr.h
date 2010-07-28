@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -20,6 +20,8 @@
 #ifndef __DATAMATR_H
 #define __DATAMATR_H
 
+#include <string>
+#include <cstring>
 #include <iostream>
 #include <cassert>
 #include <stdio.h>
@@ -52,10 +54,6 @@ protected:
 	int 	gapsIncludedNChar; //the actual number of columns in the data matrix read in
 								//only used when outputting something relative to input alignment
 	int		dense;		//whether the data has been sorted and identical patterns combined
-	int		nonZeroCharCount;	//this is the number of character patterns that have non-zero
-								//counts after bootstrap resampling.  Zero count characters can
-								//be avoided in the conditional likelihood calcs, but how this
-								//is done varies depending on the context
 	
 	unsigned char**         matrix;
 	int*		count;
@@ -66,20 +64,21 @@ protected:
 						//both start at 0, so offset upon output
 						//This used to represent something else (I think)
 	char**          taxonLabel;
+	char**          taxonColor;
 	int		nMissing;
 	int		nConstant;
 	int		nInformative;
-	int		nVarUninform;
+	int		nAutapomorphic;
 	int 	lastConstant;//DJZ
 	int 	*constStates;//the state (or states) that a constant site contains
+	FLOAT_TYPE*	stateDistr;
+	int		stateDistrComputed;
 	int		currentBootstrapSeed;
-	unsigned char fullyAmbigChar;
 	
 	protected:
 		int*	numStates;
 		int		dmFlags;
 		int     maxNumStates;
-		bool	useDefaultWeightsets;
 
 	protected:
 		char	info[80];
@@ -102,31 +101,30 @@ protected:
 			PT_MISSING		= 0x0000,
 			PT_CONSTANT		= 0x0001,
 			PT_INFORMATIVE		= 0x0002,
-			PT_VARIABLE		= 0x0004
+			PT_AUTAPOMORPHIC	= 0x0004,
+			PT_VARIABLE		= 0x0008
 		};
 
 	public:
 		DataMatrix() : dmFlags(0), dense(0), nTax(0), nChar(0), matrix(0), count(0)
-			, number(0), taxonLabel(0), numStates(0) 
-			, nMissing(0), nConstant(0), nInformative(0), nVarUninform(0),
-			lastConstant(-1), constStates(0), origCounts(0), currentBootstrapSeed(0),
-			fullyAmbigChar(15), useDefaultWeightsets(false)
+			, number(0), taxonLabel(0), numStates(0), stateDistr(0)
+			, nMissing(0), nConstant(0), nInformative(0), nAutapomorphic(0), stateDistrComputed(0),
+			lastConstant(-1), constStates(0), origCounts(0), currentBootstrapSeed(0)
 			{ memset( info, 0x00, 80 ); }
 		DataMatrix( int ntax, int nchar )
 			: nTax(ntax), nChar(nchar), dmFlags(0), dense(0), matrix(0), count(0)
-			, number(0), taxonLabel(0), numStates(0)
-			, nMissing(0), nConstant(0), nInformative(0), nVarUninform(0),
-			lastConstant(-1), constStates(0), origCounts(0), currentBootstrapSeed(0),
-			fullyAmbigChar(15), useDefaultWeightsets(false)
+			, number(0), taxonLabel(0), numStates(0), stateDistr(0)
+			, nMissing(0), nConstant(0), nInformative(0), nAutapomorphic(0), stateDistrComputed(0),
+			lastConstant(-1), constStates(0), origCounts(0), currentBootstrapSeed(0)
 			{ memset( info, 0x00, 80 ); NewMatrix(ntax, nchar); }
 		virtual ~DataMatrix();
 
 		// pure virtual functions - must override in derived class
 		virtual unsigned char	CharToDatum( char ch )					= 0;
-		virtual unsigned char CharToBitwiseRepresentation( char ch ) const= 0;
-		virtual char	DatumToChar( unsigned char d )	const           = 0;
-		virtual unsigned char	FirstState()		    const           = 0;
-		virtual unsigned char	LastState()		        const           = 0;
+		virtual unsigned char CharToBitwiseRepresentation( char ch ) 	= 0;
+		virtual char	DatumToChar( unsigned char d )	                = 0;
+		virtual unsigned char	FirstState()		                    = 0;
+		virtual unsigned char	LastState()		                        = 0;
 //		virtual FLOAT_TYPE	Freq( unsigned char, int = 0)	                        = 0;
 
 		// virtual functions - can override in derived class
@@ -135,10 +133,12 @@ protected:
 		virtual int NumStates(int j) const
 			{ return ( numStates && (j < nChar) ? numStates[j] : 0 ); }
 
+		FLOAT_TYPE prNumStates( int n ) const;
+
 		// functions for quizzing dmFlags
-		int InvarCharsExpected() const { return !(dmFlags & allvariable); }
-		int VariableNumStates() const { return (dmFlags & vnstates); }
-		int AmbiguousStates() const { return (dmFlags & ambigstates); }
+		int InvarCharsExpected() { return !(dmFlags & allvariable); }
+		int VariableNumStates() { return (dmFlags & vnstates); }
+		int AmbiguousStates() { return (dmFlags & ambigstates); }
 
 		// functions for getting the data in and out
 		int GetToken( istream& in, char* tokenbuf, int maxlen, bool acceptComments=true );
@@ -148,7 +148,7 @@ protected:
 		int Save( const char* filename, char* newfname = 0, char* nxsfname = 0 );
 
 		char*	DataType() { return info; }
-		int     unsigned charToInt( unsigned char d ) const { return (int)d; }
+		int     unsigned charToInt( unsigned char d ) { return (int)d; }
 
 		int NTax() const { return nTax; }
 		void SetNTax(int ntax) { nTax = ntax; }
@@ -158,7 +158,6 @@ protected:
 		int GapsIncludedNChar() const { return gapsIncludedNChar; }
 		void SetNChar(int nchar) { nChar = nchar; }
 
-		int BootstrappedNChar() {return nonZeroCharCount;} 
 		void Flush() { NewMatrix( 0, 0 ); }
 		int Dense() const { return dense; }
 		
@@ -167,24 +166,16 @@ protected:
 			//{ return ( number && (j < totalNChar) ? number[j] : 0 ); }
 			{ return ( number && (j < gapsIncludedNChar) ? number[j] : 0 ); }
 
-		virtual int Count(int j) const{ 
-			return ( count && (j < nChar) ? count[j] : 0 ); 
-			}
-		virtual int CountByOrigIndex(int j) const{ 
-			return ( count && (j < nChar) ? count[number[j]] : 0 ); 
-			}
-		virtual const int *GetCounts() const {
-			return count;
-			}
-		const int *GetConstStates() const {
-			return constStates;
-			}
-		void SetCount(int j, int c){
-			if( count && (j < nChar) ) count[j] = c; 
-			}
-		void SetNumStates(int j, int c){ 
-			if( numStates && (j < nChar) ) numStates[j] = c;
-			}
+		virtual int Count(int j) const
+			{ return ( count && (j < nChar) ? count[j] : 0 ); }
+		virtual const int *GetCounts() const {return count;}
+		const int *GetConstStates() const {return constStates;}
+		void SetCount(int j, int c)
+			{ if( count && (j < nChar) ) count[j] = c; }
+
+		void SetNumStates(int j, int c)
+			{ if( numStates && (j < nChar) ) numStates[j] = c; }
+
 		const char* TaxonLabel(int i) const{
 			return ( taxonLabel && (i < nTax) ? taxonLabel[i] : 0 );
 			}
@@ -202,12 +193,8 @@ protected:
 			}
 
 		void BeginNexusTreesBlock(ofstream &treeout) const;
-		void BeginNexusTreesBlock(string &trans) const;
-
-		//virtual void CreateMatrixFromNCL(GarliReader &reader) {};
-		virtual void CreateMatrixFromNCL(const NxsCharactersBlock *) = 0;
-		virtual void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset) = 0;
-		
+		virtual void CreateMatrixFromNCL(NxsCharactersBlock *) = 0;
+	
 		virtual unsigned char Matrix( int i, int j ) const {
 			assert( matrix );
 			assert( i >= 0 );
@@ -231,7 +218,7 @@ protected:
 		int NConstant() const { return nConstant; }
 		int LastConstant() const {return lastConstant;}
 		int NInformative() const { return nInformative; }
-		int NVarUninform() const { return nVarUninform; }
+		int NAutapomorphic() const { return nAutapomorphic; }
 
 		DataMatrix& operator =(const DataMatrix&);
 
@@ -239,7 +226,7 @@ protected:
 			byCounts;
 			QSort( 0, NChar()-1 );
 			}
-		virtual int PatternType( int , unsigned int *) const;	// returns PT_XXXX constant indicating type of pattern
+		virtual int PatternType( int , int*, unsigned char *) const;	// returns PT_XXXX constant indicating type of pattern
 		void Summarize();       // fills in nConstant, nInformative, and nAutapomorphic data members
 		virtual void Collapse();
 		virtual void Pack();
@@ -256,9 +243,6 @@ protected:
 		bool operator==(const DataMatrix& rhs) const; // cjb - to test serialization
 		void ExplicitDestructor();  // cjb - totally clear the DataMatrix and revert it to its original state as if it was just constructed
 		void CheckForIdenticalTaxonNames();
-
-		//for determining parsimony informative chars
-		int MinScore(set<unsigned char> patt, int bound, unsigned char bits=15, int sc=0) const;
 
 	public:	// exception classes
 #if defined( CPLUSPLUS_EXCEPTIONS )
@@ -295,10 +279,8 @@ protected:
       			}
       		}
       void Reweight(FLOAT_TYPE prob);
-      long BootstrapReweight(int seed, FLOAT_TYPE resampleProportion);
-	  void CountMissingCharsByColumn(vector<int> &vec);
-	  void MakeWeightSetString(NxsCharactersBlock &charblock, string &wtstring, string name);
-      void MakeWeightSetString(std::string &wtstring, string name);
+      virtual long BootstrapReweight(int seed, FLOAT_TYPE resampleProportion);
+      
 #endif
 };
 

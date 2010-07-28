@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -41,15 +41,15 @@ protected:
 	FLOAT_TYPE *empStateFreqs;
 	// overrides of base class's virtual fuctions
 	virtual unsigned char CharToDatum( char ch ) = 0;
-	virtual unsigned char CharToBitwiseRepresentation( char ch ) const;
-	virtual char	DatumToChar( unsigned char d ) const;
-	virtual unsigned char	FirstState() const { return 0; }
-	virtual unsigned char	LastState() const { return 3; }
+	virtual unsigned char CharToBitwiseRepresentation( char ch );
+	virtual char	DatumToChar( unsigned char d );
+	virtual unsigned char	FirstState() { return 0; }
+	virtual unsigned char	LastState() { return 3; }
 	virtual int	NumStates(int) const { return 4; }
 
 public:
-	virtual void CreateMatrixFromNCL(const NxsCharactersBlock *) = 0;
-	virtual void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset) = 0;
+	virtual void CreateMatrixFromNCL(NxsCharactersBlock *) = 0;
+	virtual void CreateMatrixFromNCL(NxsCharactersBlock *, NxsUnsignedSet &charset) = 0;
 	virtual void CalcEmpiricalFreqs() = 0;
 	virtual void GetEmpiricalFreqs(FLOAT_TYPE *f) const{
 		assert(empStateFreqs);
@@ -57,7 +57,8 @@ public:
 		}
 	};
 
-inline unsigned char SequenceData::CharToDatum( char ch ){
+inline unsigned char SequenceData::CharToDatum( char ch )
+{
 	unsigned char datum;
 
 	if( ch == 'A' || ch == 'a' )
@@ -80,7 +81,8 @@ inline unsigned char SequenceData::CharToDatum( char ch ){
 	return datum;
 }
 
-inline unsigned char SequenceData::CharToBitwiseRepresentation( char ch ) const{
+inline unsigned char SequenceData::CharToBitwiseRepresentation( char ch )
+{
 	unsigned char datum=0;
 	switch(ch){
 		case 'A' : datum=1; break;
@@ -123,7 +125,7 @@ inline unsigned char SequenceData::CharToBitwiseRepresentation( char ch ) const{
 	return datum;
 }
 
-inline char SequenceData::DatumToChar( unsigned char d ) const
+inline char SequenceData::DatumToChar( unsigned char d )
 {
 	char ch;
 	switch(d){
@@ -170,8 +172,8 @@ class NucleotideData : public SequenceData{
 #endif
 
 public:		
-	NucleotideData() : SequenceData() {fullyAmbigChar = 15;}
-	NucleotideData( int ntax, int nchar ) : SequenceData( ntax, nchar ) {fullyAmbigChar = 15;}
+	NucleotideData() : SequenceData() {}
+	NucleotideData( int ntax, int nchar ) : SequenceData( ntax, nchar ) {}
 	~NucleotideData() {
 		for(vector<char*>::iterator delit=ambigStrings.begin();delit!=ambigStrings.end();delit++)
 			delete [](*delit);
@@ -181,10 +183,10 @@ public:
 #endif
 		}
 
-	unsigned char CharToDatum(char d) ;
+	unsigned char CharToDatum(char d);
 	void CalcEmpiricalFreqs();
-	void CreateMatrixFromNCL(const NxsCharactersBlock *);
-	void CreateMatrixFromNCL(const NxsCharactersBlock *charblock, NxsUnsignedSet &charset);
+	void CreateMatrixFromNCL(NxsCharactersBlock *);
+	void CreateMatrixFromNCL(NxsCharactersBlock *charblock, NxsUnsignedSet &charset);
 	void MakeAmbigStrings();
 	char *GetAmbigString(int i) const{
 		return ambigStrings[i];
@@ -199,30 +201,14 @@ public:
 class GeneticCode{
 	//mapping from codon number (ordered AAA, AAC, AAG, AAT, ACA, etc) to 
 	//amino acid number (0-19). Stop codons are 20.
-	//except for two-serine models, when they are 21 and the serine with two codons is state 20
 	int codonTable[64];
 	int map64toNonStops[64];
 	vector<int> stops;
 
-	//this holds the correspondence between the state indeces and actual codons
-	//for display purposes.  Stops are removed and thus any mapIndexToCodonDisplay[index]
-	//gives the codon for that index
-	vector<string> mapIndexToCodonDisplay;
-
 	public:
-	enum{
-		STANDARD= 0,
-		VERTMITO = 1,
-		INVERTMITO = 2,
-		STANDARDTWOSERINE = 3,
-		VERTMITOTWOSERINE = 4,
-		INVERTMITOTWOSERINE = 5
-		}codeName;
-	
 	GeneticCode(){
 		SetStandardCode();
 		}
-
 	void SetStandardCode(){
 		codonTable[ 0 ]= 8;
 		codonTable[ 1 ]= 11;
@@ -358,23 +344,8 @@ class GeneticCode{
 		stops.push_back(48);
 		stops.push_back(50);
 		stops.push_back(56);
-
-		FillIndexToCodonDisplayMap();
 		}
 		
-	void SetStandardTwoSerineCode(){
-		//because the stops don't change location, I don't think that anything else needs to be changed here
-
-		//the two lone serines become the 20th state
-		codonTable[ 9 ]= 20;  //AGC
-		codonTable[ 11 ]= 20; //AGT
-
-		//the three stop codons become the 21st state
-		codonTable[ 48 ]= 21;
-		codonTable[ 50 ]= 21;
-		codonTable[ 56 ]= 21;
-		}
-
 	void SetVertMitoCode(){
 		SetStandardCode();
 		codonTable[56] = 18; //TGA
@@ -452,25 +423,8 @@ class GeneticCode{
 		stops.push_back(10);
 		stops.push_back(48);
 		stops.push_back(50);
-
-		FillIndexToCodonDisplayMap();
 		}
-
-	//this should be called AFTER SetVertMitoCode()
-	void SetVertMitoTwoSerineCode(){
-		//because the stops don't change location, I don't think that anything else needs to be changed here
-
-		//the two lone serines become the 20th state
-		codonTable[ 9 ]= 20;  //AGC
-		codonTable[ 11 ]= 20; //AGT
-
-		//the four stop codons become the 21st state
-		codonTable[8] = 21;  //AGA
-		codonTable[10] = 21;  //AGG
-		codonTable[ 48 ]= 21;
-		codonTable[ 50 ]= 21;
-		}
-
+		
 	void SetInvertMitoCode(){
 		SetStandardCode();
 		codonTable[56] = 18; //TGA
@@ -546,21 +500,6 @@ class GeneticCode{
 		stops.clear();
 		stops.push_back(48);
 		stops.push_back(50);
-		
-		FillIndexToCodonDisplayMap();
-		}
-
-	//this should be called AFTER SetInvertMitoCode()
-	void SetInvertMitoTwoSerineCode(){
-		//because the stops don't change location, I don't think that anything else needs to be changed here
-
-		//the two lone serines become the 20th state
-		codonTable[ 9 ]= 20;  //AGC
-		codonTable[ 11 ]= 20; //AGT
-
-		//the two stop codons become the 21st state
-		codonTable[ 48 ]= 21;
-		codonTable[ 50 ]= 21;
 		}
 
 	int CodonLookup(int i){
@@ -572,29 +511,6 @@ class GeneticCode{
 		assert(map64toNonStops[i] != -1);
 		return map64toNonStops[i];
 		}
-	void FillIndexToCodonDisplayMap(){
-		//this assumes that the correct genetic code has already been set
-		mapIndexToCodonDisplay.clear();
-		char nucs[4] = {'A', 'C', 'G', 'T'};
-		//char cod[3];
-		char *cod = new char[4];
-		for(int f = 0;f < 4;f++){
-			for(int s = 0;s < 4;s++){
-				for(int t = 0;t < 4;t++){
-					if(CodonLookup(f * 16 + s * 4 + t) != 20){ 
-						sprintf(cod, "%c%c%c\0", nucs[f], nucs[s], nucs[t]);
-						mapIndexToCodonDisplay.push_back(cod);
-						}
-					}
-				}
-			}
-		delete []cod;
-		}
-	const string LookupCodonDisplayFromIndex(int index) const{
-		return mapIndexToCodonDisplay[index];
-		}
-
-	int NumStates() const {return mapIndexToCodonDisplay.size();}
 	};
 
 class CodonData : public SequenceData {
@@ -620,47 +536,42 @@ public:
 		maxNumStates = 61;
 		code.SetStandardCode();
 		empType = NOT_EMPIRICAL;
-		fullyAmbigChar = maxNumStates;
 		}
 
 	CodonData(const NucleotideData *dat, int genCode) : SequenceData(){
 		assert(dat->Dense() == false);
-		if(genCode == GeneticCode::STANDARD){
+		if(genCode == 0){
 			code.SetStandardCode();
 			maxNumStates = 61;
 			}
-		else if(genCode == GeneticCode::VERTMITO){
+		else if(genCode == 1){
 			code.SetVertMitoCode();
 			maxNumStates = 60;
 			}
-		else if(genCode == GeneticCode::INVERTMITO){
+		else{
 			code.SetInvertMitoCode();
 			maxNumStates = 62;
-			}
-		else{
-			throw ErrorException("Sorry, only the standard, vert mito and invert mito codes can be used with codon models");
 			}
 		FillCodonMatrixFromDNA(dat);
 		CopyNamesFromOtherMatrix(dat);
 		empType = NOT_EMPIRICAL;
-		fullyAmbigChar = maxNumStates;
 		}
 
 	~CodonData(){}
 
 	void FillCodonMatrixFromDNA(const NucleotideData *);
-	unsigned char CharToDatum(char c)  {
+	unsigned char CharToDatum(char c) {
 		//this shouldn't be getting called, as it makes no sense for codon data
 		assert(0);
 		return 0;
 		}
-	void CreateMatrixFromNCL(const NxsCharactersBlock *){
+	void CreateMatrixFromNCL(NxsCharactersBlock *){
 		//this also should not be getting called.  The codon matrix
 		//is created from a DNA matrix that has been read in, possibly
 		//by the NCL
 		assert(0);
 		}
-	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset){
+	void CreateMatrixFromNCL(NxsCharactersBlock *, NxsUnsignedSet &charset){
 		//this also should not be getting called.  The codon matrix
 		//is created from a DNA matrix that has been read in, possibly
 		//by the NCL
@@ -678,11 +589,6 @@ public:
 	//int ComparePatterns( const int i, const int j ) const;
 	void SetVertMitoCode() {code.SetVertMitoCode();}
 	void SetInvertMitoCode() {code.SetInvertMitoCode();}
-/*	these don't make sense in a standard codon model context since it doesn' change whether anything is an S or NS change
-	void SetStandardTwoSerineCode() {code.SetStandardTwoSerineCode();}
-	void SetVertMitoTwoSerineCode() {code.SetVertMitoTwoSerineCode();}
-	void SetInvertMitoTwoSerineCode() {code.SetInvertMitoTwoSerineCode();}
-*/
 };
 
 
@@ -691,40 +597,204 @@ class AminoacidData : public SequenceData{
 public:
 	AminoacidData() : SequenceData(){
 		maxNumStates = 20;
-		fullyAmbigChar = maxNumStates;
 		}
 
 	AminoacidData(const NucleotideData *dat, int genCode) : SequenceData(){
 		maxNumStates = 20;
 		GeneticCode c;
-		if(genCode == GeneticCode::STANDARD) c.SetStandardCode();
-		else if(genCode == GeneticCode::VERTMITO) c.SetVertMitoCode();
-		else if(genCode == GeneticCode::INVERTMITO) c.SetInvertMitoCode();
-		else{
-			if(genCode == GeneticCode::STANDARDTWOSERINE){
-				c.SetStandardTwoSerineCode();
-				}
-			else if(genCode == GeneticCode::VERTMITOTWOSERINE){
-				c.SetVertMitoCode();
-				c.SetVertMitoTwoSerineCode();
-				}
-			else if(genCode == GeneticCode::INVERTMITOTWOSERINE){
-				c.SetInvertMitoCode();
-				c.SetInvertMitoTwoSerineCode();
-				}
-			else assert(0);
-			maxNumStates = 21;	
-			}
+		if(genCode == 0) c.SetStandardCode();
+		else if(genCode == 1) c.SetVertMitoCode();
+		else c.SetInvertMitoCode();
 		FillAminoacidMatrixFromDNA(dat, &c);
 		CopyNamesFromOtherMatrix(dat);
-		fullyAmbigChar = maxNumStates;
 		}
 	void FillAminoacidMatrixFromDNA(const NucleotideData *dat, GeneticCode *code);
 	void CalcEmpiricalFreqs();
-	unsigned char CharToDatum(char d) ;
-	void CreateMatrixFromNCL(const NxsCharactersBlock *);
-	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
+	unsigned char CharToDatum(char d);
+	void CreateMatrixFromNCL(NxsCharactersBlock *);
+	void CreateMatrixFromNCL(NxsCharactersBlock *, NxsUnsignedSet &charset);
 	};
+
+class DataPartition {
+private:
+	vector<SequenceData *> dataSubsets;
+	int nTax;
+public:
+	void AddSubset(SequenceData* sub){
+		dataSubsets.push_back(sub);
+		nTax = sub->NTax();
+		}
+	SequenceData *GetSubset(int num) const{
+		if(num < 0 || (num < dataSubsets.size()) == false) throw ErrorException("Tried to access invalid subset number");
+		return dataSubsets[num];
+		}
+	void Delete(){
+		for(vector<SequenceData *>::iterator it = dataSubsets.begin();it != dataSubsets.end(); it++)
+			delete *it;
+		}
+	int NTax() const {return nTax;}
+	int NumSubsets() const {return dataSubsets.size();}
+	void BeginNexusTreesBlock(ofstream &out) const {dataSubsets[0]->BeginNexusTreesBlock(out);}
+	NxsString TaxonLabel(int t) const {return dataSubsets[0]->TaxonLabel(t);}
+	int TaxonNameToNumber(NxsString name) const{return dataSubsets[0]->TaxonNameToNumber(name);}
+	};
+
+class DataSubsetInfo{
+public:
+	int garliSubsetNum;
+	int charblockNum;
+	string charblockName;
+	int partitionSubsetNum;
+	string partitionSubsetName;
+	enum type{
+		NUCLEOTIDE = 0,
+		AMINOACID = 1,
+		CODON = 2, 
+		NSTATE= 3,
+		NSTATEV = 4
+		}readAs, usedAs;
+	int totalCharacters;
+	int uniqueCharacters;
+	string outputNames[5];//{"Nucleotide data", "Amino acid data", "Codon data"};
+	DataSubsetInfo(int gssNum, int cbNum, string cbName, int psNum, string psName, type rAs, type uAs) :
+		garliSubsetNum(gssNum), charblockNum(cbNum), charblockName(cbName), partitionSubsetNum(psNum), partitionSubsetName(psName), readAs(rAs), usedAs(uAs){
+			outputNames[0]="Nucleotide data";
+			outputNames[1]="Amino acid data";
+			outputNames[2]="Codon data";
+			outputNames[3]="Standard k-state data";
+			outputNames[4]="Standard k-state data, variable only";
+			}
+	void Report(){
+		outman.UserMessage("GARLI partition subset %d", garliSubsetNum+1);
+		outman.UserMessage("\tCHARACTERS block #%d (\"%s\")", charblockNum+1, charblockName.c_str());
+		if(partitionSubsetNum >= 0) outman.UserMessage("\tCHARPARTITION subset #%d (\"%s\")", partitionSubsetNum+1, partitionSubsetName.c_str());
+		outman.UserMessage("\tData read as %s,\n\tmodeled as %s", outputNames[readAs].c_str(), outputNames[usedAs].c_str());
+		}
+	};
+
+//
+// Mk type model, with binary data
+class BinaryData : public SequenceData{
+	public:
+		BinaryData() : SequenceData(){
+			maxNumStates = 2;
+			}
+
+		unsigned char CharToDatum(char d);
+		char DatumToChar( unsigned char d );
+		void CreateMatrixFromNCL(NxsCharactersBlock *);
+		void CreateMatrixFromNCL(NxsCharactersBlock *, NxsUnsignedSet &charset);
+		void CalcEmpiricalFreqs(){
+			//BINARY - this might actually make sense for gap encoding
+			}
+	};
+
+inline unsigned char BinaryData::CharToDatum( char ch ){
+	unsigned char datum;
+
+	if( ch == '0' || ch == '-' )
+		datum = 0;
+	else if( ch == '1' || ch == '+' )
+		datum = 1;
+	else if( ch == '?' )
+		datum = 2;
+	else
+      THROW_BADSTATE(ch);
+
+	return datum;
+	}
+
+inline char BinaryData::DatumToChar( unsigned char d ){
+	char ch = 'X';	// ambiguous
+
+	if( d == 2 )
+		ch = '?';
+	else if( d == 0 )
+		ch = '0';
+	else if( d == 1 )
+		ch = '1';
+
+	return ch;
+	}
+//
+// Mk or Mkv type model, with n-state data
+class NStateData : public SequenceData{
+	public:
+		enum{
+			ALL = 0,
+			ONLY_VARIABLE = 1,
+			ONLY_INFORM = 2
+			}type;
+		NStateData() : SequenceData(){
+			maxNumStates = 99;
+			}
+		NStateData(int ns) : SequenceData(){
+			maxNumStates = ns;
+			}
+		NStateData(int ns, bool isMkv) : SequenceData(){
+			if(isMkv)type = ONLY_VARIABLE;
+			else type = ALL;
+			maxNumStates = ns;
+			}
+		void SetNumStates(int ns){maxNumStates = ns;}
+
+		unsigned char CharToDatum(char d);
+		char DatumToChar( unsigned char d );
+		void CreateMatrixFromNCL(NxsCharactersBlock *);
+		void CreateMatrixFromNCL(NxsCharactersBlock *, NxsUnsignedSet &charset);
+		void CalcEmpiricalFreqs(){
+			//BINARY - this might actually make sense for gap encoding
+			}
+		//this is a virtual overload for NState because it might have to deal with the dummy char, which shouldn't be included in the resampling
+		long BootstrapReweight(int restartSeed, FLOAT_TYPE resampleProportion);
+	};
+
+inline unsigned char NStateData::CharToDatum( char ch ){
+	unsigned char datum;
+
+	if( ch == '0')
+		datum = 0;
+	else if( ch == '1')
+		datum = 1;
+	else if( ch == '2')
+		 datum = 2;
+	else if( ch == '3')
+		 datum = 3;
+	else if( ch == '4')
+		 datum = 4;
+	else if( ch == '5')
+		 datum = 5;
+	else if( ch == '6')
+		 datum = 6;
+	else if( ch == '7')
+		 datum = 7;
+	else if( ch == '8')
+		 datum = 8;
+	else if( ch == '9')
+		 datum = 9;
+	else if( ch == '?')
+		datum = 99;
+	else
+      THROW_BADSTATE(ch);
+
+	return datum;
+	}
+
+inline char NStateData::DatumToChar( unsigned char d ){
+	//NSTATE - not sure how this should work, but it isn't that important anyway
+	
+	char ch = 'X';	// ambiguous
+/*
+	if( d == 2 )
+		ch = '?';
+	else if( d == 0 )
+		ch = '0';
+	else if( d == 1 )
+		ch = '1';
+*/
+	return ch;
+	}
+
 
 #endif
 
