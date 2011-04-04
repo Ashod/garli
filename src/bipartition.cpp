@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -231,7 +231,7 @@ bool Bipartition::OldIsCompatibleWithBipartitionWithMask(const Bipartition &bip,
 			}
 		}
 	if(compat==true && ((((~rep[i] & bip.rep[i]) & mask.rep[i]) & partialBlockMask) == 0)) 
-		return true;
+	return true;
 	//~A & ~B
 	compat=true;
 	for(i=0;i<nBlocks-1;i++){

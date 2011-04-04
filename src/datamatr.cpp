@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -35,7 +35,7 @@ using namespace std;
 #include "garlireader.h"
 #include "stopwatch.h"
 
-extern ModelSpecification modSpec;
+//extern ModelSpecification modSpec;
 
 #define MAX_TAXON_LABEL		100
 
@@ -254,6 +254,13 @@ void PatternManager::NewCollapse(){
 			second++;
 			}
 		}
+	//this will zero the count of all missing pats, which will make them not get put into the uniquePatterns
+	//list in NewPack
+	for(list<Pattern>::iterator pit = patterns.begin();pit != patterns.end();pit++){
+		if((*pit).numStates == 0){
+			(*pit).count = 0;
+			}
+		}
 	}
 
 void PatternManager::NewSort(){
@@ -262,7 +269,7 @@ void PatternManager::NewSort(){
 	//this is the stl list sort function, using Pattern::operator<
 	patterns.sort();
 
-	outman.UserMessage("%d pattern comparisons were needed", numCompares);
+	//outman.UserMessage("%d pattern comparisons were needed", numCompares);
 	}
 
 // This version of pack copies unique patterns from the patterns list into the uniquePatterns list
@@ -280,6 +287,7 @@ void PatternManager::NewPack(){
 
 //This does all necessary processing in the patman (assuming that it has already been filled with data)
 //up to the point when the compressed matrix can be copied back into 
+//this will only be used for nuc/AA/codon data
 void PatternManager::ProcessPatterns(){
 	totNumChars = patterns.size();
 	CalcPatternTypesAndNumStates();
@@ -364,6 +372,12 @@ void PatternManager::FillNumberVector(vector<int> &nums) const{
 		nums.clear();
 		nums.resize(patterns.size());
 		}
+	
+	//this is necessary so that all missing patterns, which should already have been removed from
+	//uniquePatterns, will properly show up as -1 in the number array, since they will not be overwritten
+	//with other values below
+	for(vector<int>::iterator nit = nums.begin();nit != nums.end();nit++)
+		(*nit) = -1;
 
 	int p = 0;
 	for(list<Pattern>::const_iterator pit = uniquePatterns.begin();pit != uniquePatterns.end();pit++){
@@ -418,21 +432,20 @@ void PatternManager::FillIntegerValues(int &nMissing, int &nConstant, int &nVarU
 	}
 
 void DataMatrix::OutputDataSummary() const{
-	outman.UserMessage("\n#######################################################");
-	outman.UserMessage("Summary of dataset:");
-	outman.UserMessage(" %d sequences.", NTax());
-	outman.UserMessage(" %d constant characters.", NConstant());
-	outman.UserMessage(" %d parsimony-informative characters.", NInformative());
-	outman.UserMessage(" %d uninformative variable characters.", NVarUninform());
-	int total = NConstant() + NInformative() + NVarUninform();
+	//outman.UserMessage("\n#######################################################");
+	outman.UserMessage("\tSummary of data:");
+	outman.UserMessage("\t  %d sequences.", NTax());
+	outman.UserMessage("\t  %d constant characters.", NConstant() - numConditioningPatterns);
+	outman.UserMessage("\t  %d parsimony-informative characters.", NInformative());
+	outman.UserMessage("\t  %d uninformative variable characters.", NVarUninform());
+	int total = NConstant() + NInformative() + NVarUninform() - numConditioningPatterns;
 	if(NMissing() > 0){
-		outman.UserMessage(" %d characters were completely missing or ambiguous (removed).", NMissing());
-		outman.UserMessage(" %d total characters (%d before removing empty columns).", total, GapsIncludedNChar());
+		outman.UserMessage("\t  %d characters were completely missing or ambiguous (removed).", NMissing());
+		outman.UserMessage("\t  %d total characters (%d before removing empty columns).", total, GapsIncludedNChar() - numConditioningPatterns);
 		}
-	else outman.UserMessage(" %d total characters.", total);
+	else outman.UserMessage("\t  %d total characters.", total);
 
-	outman.UserMessage("%d unique patterns in compressed data matrix.\n", NChar());
-	outman.UserMessage("#######################################################");
+	outman.UserMessage("\t  %d unique patterns in compressed data matrix.", NChar() - numConditioningPatterns);
 	outman.flush();
 	}
 
@@ -448,9 +461,18 @@ void DataMatrix::ProcessPatterns() {
 		Collapse();
 		DetermineConstantSites();
 		}
+	CalcEmpiricalFreqs();
 	ReserveOriginalCounts();
 	OutputDataSummary();
-	outman.UserMessage("Pattern processing took %d seconds", stoppy.SplitTime());
+	int t = stoppy.SplitTime();
+	if(t == 0)
+		outman.UserMessage("\tPattern processing required < 1 second");
+	else
+		outman.UserMessage("\tPattern processing required %d second(s)", stoppy.SplitTime());
+	if(numCompares > 0)
+		outman.UserMessage("\t%d pattern comparisons were needed", numCompares);
+	outman.UserMessage("");
+	//outman.UserMessage("#######################################################");
 	}
 
 //this pulls all of the processed data back out of the patman into the old fields of DataMatrix
@@ -470,15 +492,14 @@ DataMatrix::~DataMatrix(){
 	if( count ) MEM_DELETE_ARRAY(count); // count is of length nChar
 	if( numStates ) MEM_DELETE_ARRAY(numStates); // numStates is of length nChar
 	if( number ) MEM_DELETE_ARRAY(number); // number is of length nChar
+	if( origDataNumber ) MEM_DELETE_ARRAY(origDataNumber); // origDataNumber is of length nChar
 	if( taxonLabel ) {
-		int j;
-		for( j = 0; j < nTax; j++ )
+		for( int j = 0; j < nTaxAllocated; j++ )
 			MEM_DELETE_ARRAY( taxonLabel[j] ); // taxonLabel[j] is of length strlen(taxonLabel[j])+1
-	       MEM_DELETE_ARRAY(taxonLabel); // taxonLabel is of length nTax
+	    MEM_DELETE_ARRAY(taxonLabel); // taxonLabel is of length nTax
 	}
 	if( matrix ) {
-		int j;
-		for( j = 0; j < nTax; j++ )
+		for( int j = 0; j < nTaxAllocated; j++ )
 			MEM_DELETE_ARRAY(matrix[j]); // matrix[j] is of length nChar
 		MEM_DELETE_ARRAY(matrix); // matrix is of length nTax
 	}
@@ -486,35 +507,40 @@ DataMatrix::~DataMatrix(){
 	if(origCounts!=NULL) delete []origCounts;
 	}
 
-void DataMatrix::SetTaxonLabel(int i, const char* s){
+void DataMatrix::SetTaxonLabel(int i, const char* s)
+{
 	if( taxonLabel && (i < nTax) )
 		ReplaceTaxonLabel(i, s);
-	}
+}
 
-void DataMatrix::ReplaceTaxonLabel( int i, const char* s ){
+void DataMatrix::ReplaceTaxonLabel( int i, const char* s )
+{
 	assert( taxonLabel );
 	if( taxonLabel[i] ) {
 		MEM_DELETE_ARRAY(taxonLabel[i]); // taxonLabel[i] is of length strlen(taxonLabel[i])+1
-		}
+	}
 	int newLength = (strlen(s)+1);
 	if(newLength > MAX_TAXON_LABEL) throw ErrorException("Sorry, taxon name %s for taxon #%d is too long (max length=%d)", s, i+1, MAX_TAXON_LABEL);
 	MEM_NEW_ARRAY(taxonLabel[i],char,newLength);
 	strcpy(taxonLabel[i], s);
-	}
+}
 
 //
 // PositionOf returns position (starting from 0) of taxon whose name
 // matches the string s in the taxonLabel list
 //
-int DataMatrix::PositionOf( char* s ) const{
+int DataMatrix::PositionOf( char* s ) const
+{
 	int i;
 
 	for( i = 0; i < nTax; i++ ) {
 		if( strcmp( taxonLabel[i], s ) == 0 ) break;
-		}
-	assert( i < nTax );
-	return i;
 	}
+
+	assert( i < nTax );
+
+	return i;
+}
 
 int DataMatrix::MinScore(set<unsigned char> patt, int bound, unsigned char bits/*=15*/, int prevSc/*=0*/) const{
 	if(patt.size() == 0) return 0;
@@ -683,7 +709,6 @@ int DataMatrix::PatternType( int k , unsigned int *stateCounts) const{
 // Summarize tallies number of constant, informative, and autapomorphic characters
 //
 void DataMatrix::Summarize(){
-	int i, k;
 	assert( nChar > 0 );
 
 	nMissing = nConstant = nInformative = nVarUninform = 0;
@@ -691,7 +716,7 @@ void DataMatrix::Summarize(){
    //this is just a scratch array to be used repeatedly in PatternType
    vector<unsigned int> s(maxNumStates);
 	
-	for( k = 0; k < nChar; k++ ) {
+	for(int k = 0; k < nChar; k++ ) {
 		int ptFlags = PatternType(k, &s[0]);
 		if( ptFlags == PT_MISSING )
 			nMissing += count[k];
@@ -710,19 +735,26 @@ void DataMatrix::Summarize(){
 // NewMatrix deletes old matrix, taxonLabel, count, and number
 // arrays and creates new ones
 //
-void DataMatrix::NewMatrix( int taxa, int sites ){
+void DataMatrix::NewMatrix( int taxa, int sites )
+{
+	//allocate an extra taxon unless there previously wasn't one
+	int extraTax = 1;
+	if(nTaxAllocated > 0){
+		extraTax = nTaxAllocated - nTax;
+		}
+
 	// delete taxon labels
 	if( taxonLabel ) {
 		int i;
-		for( i = 0; i < nTax; i++ )
+		for( i = 0; i < nTaxAllocated; i++ )
 			MEM_DELETE_ARRAY(taxonLabel[i]); // taxonLabel[i] is of length strlen(taxonLabel[i])+1
 		MEM_DELETE_ARRAY(taxonLabel); // taxonLabel is of length nTax
 	}
 
 	// create new array of taxon label pointers
 	if( taxa > 0 ) {
-		MEM_NEW_ARRAY(taxonLabel,char*,taxa);
-		for( int i = 0; i < taxa; i++ )
+		MEM_NEW_ARRAY(taxonLabel,char*,taxa + extraTax);
+		for( int i = 0; i < taxa + extraTax; i++ )
 			taxonLabel[i] = NULL;
 	}
 
@@ -730,7 +762,7 @@ void DataMatrix::NewMatrix( int taxa, int sites ){
 	if( matrix ) {
 		int j;
 	//	for( j = 0; j < nChar; j++ )
-		for( j = 0; j < nTax; j++ )
+		for( j = 0; j < taxa + extraTax; j++ )
 			MEM_DELETE_ARRAY(matrix[j]); // matrix[j] has length nChar
 		MEM_DELETE_ARRAY(matrix); // matrix has length nTax
 	}
@@ -742,24 +774,28 @@ void DataMatrix::NewMatrix( int taxa, int sites ){
 		MEM_DELETE_ARRAY(numStates); // numStates has length nChar
 	}
 	if( number ) {
-        MEM_DELETE_ARRAY(number); // number has length nChar
+                MEM_DELETE_ARRAY(number); // number has length nChar
         }
-
+	if( origDataNumber ) {
+                MEM_DELETE_ARRAY(origDataNumber); // origDataNumber has length nChar
+        }
 	// create new data matrix, and new count and number arrays
 	// all counts are initially 1, and characters are numbered
 	// sequentially from 0 to nChar-1
 	if( taxa > 0 && sites > 0 ) {
-		MEM_NEW_ARRAY(matrix,unsigned char*,taxa);
+		MEM_NEW_ARRAY(matrix,unsigned char*,taxa + extraTax);
 		MEM_NEW_ARRAY(count,int,sites);
 		MEM_NEW_ARRAY(numStates,int,sites);
 		MEM_NEW_ARRAY(number,int,sites);
+		MEM_NEW_ARRAY(origDataNumber,int,sites);
 
 		for( int j = 0; j < sites; j++ ) {
 			count[j] = 1;
 			numStates[j] = 1;
 			number[j] = j;
+			origDataNumber[j] = j;
 		}
-		for( int i = 0; i < taxa; i++ ) {
+		for( int i = 0; i < taxa + extraTax; i++ ) {
 			matrix[i]=new unsigned char[sites];
 			//MEM_NEW_ARRAY(matrix[i],unsigned char,sites);
 			//memset( matrix[i], 0xff, taxa*sizeof(unsigned char) );
@@ -769,6 +805,7 @@ void DataMatrix::NewMatrix( int taxa, int sites ){
 
 	// set dimension variables to new values
 	nTax = taxa;
+	nTaxAllocated = nTax + extraTax;
 	nonZeroCharCount = gapsIncludedNChar = totalNChar = nChar = sites;
 	}
 
@@ -778,7 +815,7 @@ void DataMatrix::ResizeCharacterNumberDependentVariables(int nCh) {
 	// delete data matrix and count and number arrays
 	if( matrix ) {
 		int j;
-		for( j = 0; j < nTax; j++ )
+		for( j = 0; j < nTaxAllocated; j++ )
 			MEM_DELETE_ARRAY(matrix[j]); // matrix[j] has length nChar
 		MEM_DELETE_ARRAY(matrix); // matrix has length nTax
 	}
@@ -794,7 +831,7 @@ void DataMatrix::ResizeCharacterNumberDependentVariables(int nCh) {
 	// all counts are initially 1, and characters are numbered
 	// sequentially from 0 to nChar-1
 	if(nChar > 0 ) {
-		MEM_NEW_ARRAY(matrix,unsigned char*,nTax);
+		MEM_NEW_ARRAY(matrix,unsigned char*,nTaxAllocated);
 		MEM_NEW_ARRAY(count,int,nChar);
 		MEM_NEW_ARRAY(numStates,int,nChar);
 
@@ -802,7 +839,7 @@ void DataMatrix::ResizeCharacterNumberDependentVariables(int nCh) {
 			count[j] = 1;
 			numStates[j] = 1;
 		}
-		for( int i = 0; i < nTax; i++ ) {
+		for( int i = 0; i < nTaxAllocated; i++ ) {
 			matrix[i]=new unsigned char[nChar];
 			memset( matrix[i], 0xff, nChar*sizeof(unsigned char) );
 			}
@@ -829,7 +866,7 @@ DataMatrix& DataMatrix::operator =(const DataMatrix& d){
 
 	for( i = 0; i < nTax; i++ ) {
 		for( j = 0; j < nChar; j++ )
-			SetMatrix(i, j, d.Matrix(i, j) );
+			SetMatrix(i, j, d.Matrix(i, j));
 	}
 
 	return *this;
@@ -858,13 +895,13 @@ void DataMatrix::Pack(){
 
 	// create new matrix and count arrays and fill
 	unsigned char** newMatrix;
-        MEM_NEW_ARRAY(newMatrix,unsigned char*,nTax);
+        MEM_NEW_ARRAY(newMatrix,unsigned char*,nTaxAllocated);
 	int* newCount;
         MEM_NEW_ARRAY(newCount,int,newNChar);
 	int* newNumStates;
         MEM_NEW_ARRAY(newNumStates,int,newNChar);
 
-	for( i = 0; i < nTax; i++ )
+	for( i = 0; i < nTaxAllocated; i++ )
 		 MEM_NEW_ARRAY(newMatrix[i],unsigned char,newNChar);
 
 
@@ -888,7 +925,7 @@ void DataMatrix::Pack(){
 	if( count ) MEM_DELETE_ARRAY(count); // count has length nChar
 	if( numStates ) MEM_DELETE_ARRAY(numStates); // numStates has length nChar
 	if( matrix ) {
-		for( i = 0; i < nTax; i++ )
+		for( i = 0; i < nTaxAllocated; i++ )
 			MEM_DELETE_ARRAY(matrix[i]); // matrix[i] has length nChar
 		MEM_DELETE_ARRAY(matrix); // matrix has length nTax
         }
@@ -916,7 +953,7 @@ void DataMatrix::DetermineConstantSites(){
 			t=0;
 			char c=15;
 			while(t<nTax){
-			char ch=Matrix(t, i);
+				char ch=Matrix(t, i);
 				c = c & ch;
 				t++;
 				}
@@ -1087,6 +1124,34 @@ void DataMatrix::Collapse(){
 	}
 
 //
+// EliminateAdjacentIdenticalColumns sets the count of successive identical patterns
+// in the original alignment to zero (usually applied to gaps)
+// i.e., adjacent identical patterns count as only one observation
+//
+void DataMatrix::EliminateAdjacentIdenticalColumns(){
+	//this needs to happen here to know the number of state counts, but will be redone later
+	Summarize();
+	
+	int i = 0, j = 1;
+	assert(nonZeroCharCount == nChar);
+
+	int numCombined = 0;
+	while( i < NChar() ) {
+		//need to avoid subtracting zero state chars here (blank cols) since the will be removed already
+		while( numStates[i] != 0 && j < NChar() && ComparePatterns( i, j ) == 0 ) {
+			// pattern j same as pattern i
+			count[j] = 0;
+			//when columns are eliminated, remove them from the total number of characters
+			totalNChar--;
+			numCombined++;
+			j++;
+			}
+		i = j++;
+		}
+	outman.UserMessage("	***%d IDENTICAL ADJACENT CHARACTERS ELIMINATED***", numCombined);
+	}
+
+//
 //  BSort implements a simple bubblesort
 //
 void DataMatrix::BSort( int byCounts /* = 0 */ ){
@@ -1240,6 +1305,10 @@ int DataMatrix::GetToken( FILE *in, char* tokenbuf, int maxlen){
 // Read reads in data from a file
 
 int DataMatrix::ReadPhylip( const char* infname){
+
+	//PARTITION
+	ModelSpecification *modSpec = modSpecSet.GetModSpec(0);
+
 	char ch;
 	bool isNexus=false;
 
@@ -1324,7 +1393,7 @@ int DataMatrix::ReadPhylip( const char* infname){
 						}
 					}
 	 			else{ 
-					if(modSpec.IsAminoAcid() && modSpec.IsCodonAminoAcid() == false)
+					if(modSpec->IsAminoAcid() && modSpec->IsCodonAminoAcid() == false)
 						datum = CharToDatum(ch);
 					else 
 						datum = CharToBitwiseRepresentation(ch);
@@ -1387,6 +1456,9 @@ int DataMatrix::ReadFasta( const char* infname){
 	char ch;
 	bool isNexus=false;
 
+	//PARTITION
+	ModelSpecification *modSpec = modSpecSet.GetModSpec(0);
+
 	FILE *inf;
 #ifdef BOINC
 	char input_path[512];
@@ -1433,7 +1505,7 @@ int DataMatrix::ReadFasta( const char* infname){
 			do{
 				ch = getc(inf);
 				}while(isspace(ch));
-			if(modSpec.IsAminoAcid() && modSpec.IsCodonAminoAcid() == false)
+			if(modSpec->IsAminoAcid() && modSpec->IsCodonAminoAcid() == false)
 				datum = CharToDatum(ch);
 			else 
 				datum = CharToBitwiseRepresentation(ch);
@@ -1617,7 +1689,7 @@ void DataMatrix::ExplicitDestructor()	{
 	if( number ) MEM_DELETE_ARRAY(number); // number is of length nChar
 	if( taxonLabel ) {
 		int j;
-		for( j = 0; j < nTax; j++ )
+		for( j = 0; j < nTaxAllocated; j++ )
 			MEM_DELETE_ARRAY( taxonLabel[j] ); // taxonLabel[j] is of length strlen(taxonLabel[j])+1
 	    MEM_DELETE_ARRAY(taxonLabel); // taxonLabel is of length nTax
 		}
@@ -1692,7 +1764,6 @@ int DataMatrix::BootstrapReweight(int seedToUse, FLOAT_TYPE resampleProportion){
 			numZero++;
 		}
 	delete []cumProbs;
-
 	assert(totCounts == totalNChar);
 	assert(nonZeroCharCount + numZero == nChar);
 
@@ -1720,6 +1791,15 @@ void DataMatrix::CheckForIdenticalTaxonNames(){
 			}
 		throw(ErrorException("Terminating.  Please make all sequence names unique!"));
 		}
+	}
+
+void DataMatrix::GetStringOfOrigDataColumns(string &str) const{
+	//note that GetSetAsNexusString takes zero offset indeces and converts them to
+	//char nums, ie adds 1 to each
+	NxsUnsignedSet chars;
+	for(int c = numConditioningPatterns;c < GapsIncludedNChar();c++)
+		chars.insert(origDataNumber[c]);
+	str = NxsSetReader::GetSetAsNexusString(chars);
 	}
 
 void DataMatrix::CountMissingCharsByColumn(vector<int> &vec){
@@ -1798,3 +1878,4 @@ void DataMatrix::MakeWeightSetString(std::string &wtstring, string name){
 	transformer.WriteWtSet(out);
 	wtstring = out.str();
 	}
+

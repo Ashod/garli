@@ -33,7 +33,6 @@ using namespace std;
 #include "errorexception.h"
 
 class CondLikeArray;
-class TopologyList;
 class Tree;
 class ClaManager;
 class Adaptation;
@@ -303,7 +302,6 @@ public:
 private:
 
 	Individual* newindiv;
-
 	vector<int> subtreeMemberNodes;
 
 #ifdef INCLUDE_PERTURBATION
@@ -313,7 +311,7 @@ private:
 		
 	//DJZ adding these streams directly to the class so that they can be opened once and left open
 	ofstream fate;
-	ofstream scoreLog;
+	ofstream log;
 	ofstream treeLog;
 	ofstream probLog;
 	ofstream bootLog;
@@ -382,10 +380,8 @@ private:
 
 	FLOAT_TYPE** cumfit;//allocated in setup, deleted in dest
 		
-	TopologyList **topologies;//allocated in Setup(), deleted in dest
-			
-	SequenceData* data;
-	SequenceData* rawData;//this will hold the original data as read in, before it might be converted
+	DataPartition *dataPart;
+	DataPartition *rawPart;//this will hold the original data as read in, before it might be converted
 					//to codons or aminoacid
 
 	Stopwatch stopwatch;
@@ -401,8 +397,8 @@ private:
 			prevBestFitness(-(FLT_MAX)),indiv(NULL), newindiv(NULL),
 			cumfit(NULL), gen(0), paraMan(NULL), subtreeDefNumber(0), claMan(NULL), 
 			treeString(NULL), adap(NULL), rep_fraction_done(ZERO_POINT_ZERO), tot_fraction_done(ZERO_POINT_ZERO),
-			topologies(NULL), userTermination(false), timeTermination(false), genTermination(false), currentBootstrapRep(0),
-			finishedRep(false), lastBootstrapSeed(0), nextBootstrapSeed(0), data(NULL), rawData(NULL), swapTermThreshold(0)
+			userTermination(false), timeTermination(false), genTermination(false), currentBootstrapRep(0),
+			finishedRep(false), lastBootstrapSeed(0), nextBootstrapSeed(0), dataPart(NULL), rawPart(NULL), swapTermThreshold(0)
 #ifdef INCLUDE_PERTURBATION			 
 			pertMan(NULL), allTimeBest(NULL), bestSinceRestart(NULL),
 #endif
@@ -445,7 +441,7 @@ private:
 		void WriteTreeFile( const char* treefname, int indnum, bool collapse = false);
 		void WritePhylipTree(ofstream &phytree);
 
-		void Setup(GeneralGamlConfig *conf, SequenceData *, int nprocs = 1, int rank = 0);
+		void Setup(GeneralGamlConfig *conf, DataPartition *, DataPartition *, int nprocs = 1, int rank = 0);
 		void Reset();
 		int Restart(int type, int rank, int nprocs, int restart_count);
 		void SeedPopulationWithStartingTree(int rep);//mult rep change
@@ -461,6 +457,7 @@ private:
 		void VariableStartingTreeOptimization(bool reducing);
 		void OptimizeSiteRates();
 		void OptimizeInputAndWriteSitelikelihoods();
+		void OptimizeInputAndWriteSitelikelihoodsAndTryRootings();
 
 		int IsError() const { return error; }
 		void ErrorMsg( char* msgstr, int len );
@@ -483,12 +480,8 @@ private:
 		int GetSpecifiedPis(FLOAT_TYPE**, int , int*);
 		int GetSpecifiedModels(FLOAT_TYPE** model_string, int n, int* indiv_list);
 		
-		void UpdateTopologyList(Individual *inds);
 		void CheckAllTrees();
 		void CheckIndividuals();
-		void TopologyReport();
-		void RemoveFromTopologyList(Individual *ind);
-		void SetupTopologyList(int maxNumTopos);
 		void CheckTreesVsClaManager();
 		FLOAT_TYPE IndivFitness(int i);
 		
@@ -546,9 +539,9 @@ private:
 		void CheckForIncompatibleConfigEntries();
 
 		void Bootstrap();
-		void AssignNewTopology(Individual *ind, int indNum);
 		void FindLostClas();
 		void FinalOptimization();
+		void BetterFinalOptimization();
 		void ResetMemLevel(int numNodesPerIndiv, int numClas);
 		void SetNewBestIndiv(int indivIndex);
 		void LogNewBestFromRemote(FLOAT_TYPE, int);

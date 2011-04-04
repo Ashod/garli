@@ -1,5 +1,5 @@
-// GARLI Version 1.0 (Dec 2009)
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI Version 2.0 (March 2011)
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -17,26 +17,39 @@
 
 Please let me know of any problems, concerns or feedback (garli.support@gmail.com)
 
-GARLI 1.0 is a finalized version of the previous beta release, version 0.96b8. Version 1.0 should
-replace earlier versions, and should be backwards compatible with all configuration files and
-datasets that were used with the previous version.
+ This is GARLI 2.0, the first "official" release including 
+          partitioned models.  It is a merging of
+   official release 1.0 and beta version GARLI-PART 0.97
+  Briefly, it includes models for nucleotides, amino acids,
+ codons, and morphology-like characters, any of which can be 
+  mixed together and applied to different subsets of data.
 
-->See the manual or support website (http://www.nescent.org/wg_garli) for detailed information on
+Version 2.0 should replace earlier versions, and should be backwards compatible with all 
+configuration files and datasets that were used with the previous versions.
+
+->See the manual or support website (http://www.nescent.org/wg/garli) for detailed information on
 using the program.  For very basic usage see QuickStart.txt.
 
 ->Example datasets and template configuration files files can be found in the example folder
 
-->For compilation help see the INSTALL file.  Version 1.0 comes with an extremely easy build
+->For compilation help see the INSTALL file.  Version 2.0 comes with an extremely easy build
 script, build_garli.sh, which should make compalation trivial on linux or OS X machines.
-
-***New in version 1.0***
 
 Please note that these new features are NOT documented in the pdf manual in the "doc" directory.  
 The manual was accurate up through version 0.96, but I do not plan to maintain it, choosing instead 
-to update the support wiki at http://www.nescent.org/wg_garli.
+to update the support wiki at http://www.nescent.org/wg/garli.
 
-This version does NOT include partitioned models, although a prototype version of GARLI allowing
-this does exist.  Email garli_support@gmail.com if you'd like to give it a try.
+***New in version 2.0***
+
+1. Ability to use partitioned models, giving the ability to divide up data and apply independent
+   models to each.   See this page for details on partitioned usage 
+   http://www.nescent.org/wg/garli/Using_partitioned_models
+2. Ability to use the Mk/Mkv "morphology" models of Lewis, 2001.  This can be applied to discrete
+   data of any type with any number of states. http://www.nescent.org/wg/garli/Mkv_morphology_model
+3. Significant improvement in parameter optimization
+4. MANY minor improvements and new features.  See the website.
+
+***New in version 1.0***
 
 1. Ability to write sitewise log-likelihood values for all model types, in a format identical to 
    PAUP*.  This can be read directly into a program like CONSEL to perform statistical comparisons 
@@ -59,7 +72,7 @@ this does exist.  Email garli_support@gmail.com if you'd like to give it a try.
    in addition to the previously implemented nucleotide models. (inferinternalstateprobs = 1)
 6. Substantial speed improvements for large constrained searches, especially backbone constraints
 7. MPI parallel runs can now be checkpointed, allowing entire sets of runs to be restarted.  Be sure
-   to read the wiki page detailing the MPI version (http://www.nescent.org/wg_garli/MPI_version)
+   to read the wiki page detailing the MPI version (http://www.nescent.org/wg/garli/MPI_version)
    to understand in what cases you might want to use this version.
 8. More rigorous error checking of input trees, constraints and parameter values. 
 9. Significant improvements to the precision of parameter optimization.  GARLI now puts 

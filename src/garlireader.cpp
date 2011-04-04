@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -165,20 +165,6 @@ void GarliReader::Add(
 		assert(curr && !curr->next);
 		curr->next = newBlock;
 		}
-	}
-*/
-/*----------------------------------------------------------------------------------------------------------------------
-|	The code here is identical to the base class version (simply returns 0), so the code here should either be 
-|	modified or this derived version eliminated altogether. Under what circumstances would you need to modify the 
-|	default code, you ask? This function should be modified to something meaningful if this derived class needs to 
-|	construct and run a NxsSetReader object to read a set involving characters. The NxsSetReader object may need to 
-|	use this function to look up a character label encountered in the set. A class that overrides this method should 
-|	return the character index in the range [1..`nchar']; i.e., add one to the 0-offset index.
-*/
-unsigned GarliReader::CharLabelToNumber(
-  NxsString) const /* the character label to be translated to character number */
-	{
-	return 0;
 	}
 
 /*----------------------------------------------------------------------------------------------------------------------
@@ -378,10 +364,10 @@ bool GarliReader::ReadData(const char* filename, const ModelSpecification &mSpec
 				ReadFilepath(filename, (*formIt).first);
 				}
 			catch(NxsException &err){
-				NexusError(err.msg, err.pos, err.line, err.col, false);
-				outman.UserMessage("Problem reading data file as %s format...\n", (*formIt).second.c_str());
-				success = false;
-				}
+					NexusError(err.msg, err.pos, err.line, err.col, false);
+					outman.UserMessage("Problem reading data file as %s format...\n", (*formIt).second.c_str());
+					success = false;
+					}
 			catch(ErrorException &err){
 				//Sometimes NCL raises a NxsException, but then catches it and passes it onto my NexusError,
 				//which throws an ErrorException.  So, need to catch both types of exceptions here
@@ -1149,7 +1135,7 @@ void GarliBlock::Read(
 			}
 		else if(token.AtEOF() == false){
 			NxsString s = token.GetToken();
-			if(s.size() > 1 && (s.IsADouble() == false && s.IsALong() == false)){
+			if(s.size() > 1 && (s.IsADouble() == false && s.IsALong() == false && s.find("M") > s.length())){
 				errormsg = "Unexpected character(s) in Garli block.\n     See manual for model parameter format.";
 				throw NxsException(errormsg, token.GetFilePosition(), token.GetFileLine(), token.GetFileColumn());
 				}

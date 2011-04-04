@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -20,6 +20,8 @@
 #ifndef __DATAMATR_H
 #define __DATAMATR_H
 
+#include <string>
+#include <cstring>
 #include <iostream>
 #include <cassert>
 #include <stdio.h>
@@ -169,6 +171,9 @@ public:
 class DataMatrix{
 protected:
 	int		nTax;
+	int		nTaxAllocated;//allocate more than nTax to allow for the addition of dummy taxa
+							//this will only be used during allocating and deallocation
+							//if a dummy taxon is created then nTax will be incremented
 	int		nChar;     //after compression
 	int		totalNChar; //columns in matrix, with all missing columns removed
 	int 	gapsIncludedNChar; //the actual number of columns in the data matrix read in
@@ -184,11 +189,30 @@ protected:
 
 	int*		count;
 	int*		origCounts;
-	int*		number; //maping of chars to columns
-						//Indeces are original char numbers,
-						//contents are the packed column representing that char
-						//both start at 0, so offset upon output
-						//This used to represent something else (I think)
+	//maping of chars to columns. indeces are original char numbers, values are the packed column representing that char
+	//both start at 0, so offset upon output
+	int*		number; 
+	/*in the partitioned context number maps the columns of the original partition subset to the columns of the
+	compressed matrix.  So, number[j] is the column of the packed matrix that represents column j of the 
+	partition subset.  So, this may have no relationship to the original data matrix before the subsets were
+	even made.  origDataNumber then maps the columns of the uncompressed subset to the original full datamatrix.
+	Thus, number[j] is the compressed column that represents uncompressed subset column j (many-to-one mapping)
+	origDataNumber[j] is the column of the orignal matrix that corresponds to uncompressed subset column j (one-to-one mapping)
+	example (zero offset): partition by codon position, so sub1 = {0, 3, 6, ...}, sub2 = {1, 4, 7, ...} and sub3 = {2, 5, 8, ...}
+	each subset is its own datamatrix object, with its own number and origDataNumber arrays.
+	so, sub1->number[0] is the column of the compressed sub1 matrix that represents the first column of sub1
+	    (same for sub2 and sub3)
+	    sub1->number[1] is the column of the compressed sub2 matrix that represents the second column of sub2
+	    (same for sub2 and sub3)
+		sub1->origDataNumber[0] = 0
+		sub2->origDataNumber[0] = 1
+		sub1->origDataNumber[1] = 3
+		sub2->origDataNumber[1] = 4
+		etc.
+	the values in number must the shuffled around as the matrix is compressed
+	the values in origDataNumber are set when SetMatrix is called, and don't change thereafter
+	*/
+	int*		origDataNumber;
 
 	//These are new correlates to the old dynamicaly allocated arrays.  They will be filled from
 	//the pattern manager.
@@ -207,7 +231,8 @@ protected:
 	int 	lastConstant;//DJZ
 	int 	*constStates;//the state (or states) that a constant site contains
 	unsigned char fullyAmbigChar;
-	
+	unsigned numConditioningPatterns;
+
 	protected:
 		int*	numStates;
 		int     maxNumStates;
@@ -233,27 +258,30 @@ protected:
 		};
 
 	public:
-		DataMatrix() : dense(0), nTax(0), nChar(0), matrix(0), count(0)
-			, number(0), taxonLabel(0), numStates(0) 
-			, nMissing(0), nConstant(0), nInformative(0), nVarUninform(0),
-			lastConstant(-1), constStates(0), origCounts(0), 
-			fullyAmbigChar(15), useDefaultWeightsets(true), usePatternManager(false)
+		DataMatrix() : dense(0), nTax(0), nChar(0), matrix(0), count(0),
+			number(0), taxonLabel(0), numStates(0),
+			nMissing(0), nConstant(0), nInformative(0), nVarUninform(0),
+			lastConstant(-1), constStates(0), origCounts(0),
+			fullyAmbigChar(15), useDefaultWeightsets(true), usePatternManager(false),
+			nTaxAllocated(0), origDataNumber(0), numConditioningPatterns(0)
 			{ memset( info, 0x00, 80 ); }
 		DataMatrix( int ntax, int nchar )
-			: nTax(ntax), nChar(nchar), dense(0), matrix(0), count(0)
-			, number(0), taxonLabel(0), numStates(0)
-			, nMissing(0), nConstant(0), nInformative(0), nVarUninform(0),
-			lastConstant(-1), constStates(0), origCounts(0), 
-			fullyAmbigChar(15), useDefaultWeightsets(true), usePatternManager(false)
+			: nTax(ntax), nChar(nchar), dense(0), matrix(0), count(0),
+			number(0), taxonLabel(0), numStates(0),
+			nMissing(0), nConstant(0), nInformative(0), nVarUninform(0),
+			lastConstant(-1), constStates(0), origCounts(0),
+			fullyAmbigChar(15), useDefaultWeightsets(true), usePatternManager(false),
+			nTaxAllocated(0), origDataNumber(0), numConditioningPatterns(0)
 			{ memset( info, 0x00, 80 ); NewMatrix(ntax, nchar); }
 		virtual ~DataMatrix();
 
 		// pure virtual functions - must override in derived class
-		virtual unsigned char	CharToDatum( char ch )					= 0;
+		virtual unsigned char	CharToDatum( char ch )	const			= 0;
 		virtual unsigned char CharToBitwiseRepresentation( char ch ) const= 0;
 		virtual char	DatumToChar( unsigned char d )	const           = 0;
 		virtual unsigned char	FirstState()		    const           = 0;
 		virtual unsigned char	LastState()		        const           = 0;
+		virtual void CalcEmpiricalFreqs() = 0;
 //		virtual FLOAT_TYPE	Freq( unsigned char, int = 0)	                        = 0;
 
 		// virtual functions - can override in derived class
@@ -285,16 +313,24 @@ protected:
 		int TotalNChar() const { return totalNChar; }
 		int GapsIncludedNChar() const { return gapsIncludedNChar; }
 		void SetNChar(int nchar) { nChar = nchar; }
+		unsigned NumConditioningPatterns() const{return numConditioningPatterns;}
 
 		int BootstrappedNChar() {return nonZeroCharCount;} 
 		void Flush() { NewMatrix( 0, 0 ); }
 		int Dense() const { return dense; }
 		
+		//argument here is column number from uncompressed subset
+		//return val is compressed pattern representing that column
 		int Number(int j) const{
 			if(newNumber.size() > 0)
 				return newNumber[j];
 			return ( number && (j < gapsIncludedNChar) ? number[j] : 0 );
 			}
+
+		//argument here is column number from uncompressed subset
+		//return val is column from original full matrix before partitioning
+		int OrigDataNumber(int j) const
+			{ return ( origDataNumber && (j < gapsIncludedNChar) ? origDataNumber[j] : 0 ); }
 
 		virtual int Count(int j) const{ 
 			if(newCount.size() > 0)
@@ -363,8 +399,13 @@ protected:
 			assert( i < nTax );
 			return matrix[i];
 		}
-		virtual void SetMatrix( int i, int j, unsigned char c )
-			{ if( matrix && (i < nTax) && (j < nChar) ) matrix[i][j] = c; }
+		virtual void SetMatrix( int i, int j, unsigned char c){
+			if(matrix && (i < nTax) && (j < nChar))
+				matrix[i][j] = c;
+			}
+		void SetOriginalDataNumber(const int subsetMatColumn, const int origMatColumn){
+			origDataNumber[subsetMatColumn] = origMatColumn;			
+			}
 
 		int MatrixExists() const { return ( matrix && nTax>0 && nChar>0 ? 1 : 0 ); }
 		int NMissing() const { return nMissing; }
@@ -382,6 +423,7 @@ protected:
 		virtual int PatternType( int , unsigned int *) const;	// returns PT_XXXX constant indicating type of pattern
 		void Summarize();       // fills in nConstant, nInformative, and nAutapomorphic data members
 		virtual void Collapse();
+		void EliminateAdjacentIdenticalColumns();
 		virtual void Pack();
 		void NewMatrix(int nt, int nc);	// flushes old matrix, creates new one
 		void ResizeCharacterNumberDependentVariables(int nCh);
@@ -389,7 +431,7 @@ protected:
 		void DumpCounts( const char* s );
 		void WriteCollapsedData();  //DZ
 		void SaveNexus(const char* filename, int iosFlags /* = 0 */); //DZ
-		void DetermineConstantSites();
+		virtual void DetermineConstantSites();
 		void ExplicitDestructor();  // cjb - totally clear the DataMatrix and revert it to its original state as if it was just constructed
 		void CheckForIdenticalTaxonNames();
 		bool DidUseDefaultWeightsets() const {return (wtsetName.length() > 0);}
@@ -397,29 +439,9 @@ protected:
 
 		//for determining parsimony informative chars
 		int MinScore(set<unsigned char> patt, int bound, unsigned char bits=15, int sc=0) const;
+		void GetStringOfOrigDataColumns(string &str) const;
 
-	public:	// exception classes
-#if defined( CPLUSPLUS_EXCEPTIONS )
-		class XBadState {
-			public:
-				XBadState( char c ) : ch(c) {}
-				char ch;
-		};
-#else
-      void Abort( char* msg )
-         { cerr << endl << "Error:" << msg << endl << "Program terminated." << endl; 
-         #ifdef POWERMAC_VERSION
-         	assert(0);
-         	cout<<"quit"<<endl;
-         	char c;
-         	cin>>c;
-         	throw 1;
-         #else
-         	exit(1); 
-         #endif
-         }
-      void BadState( char ch ) { char s[80]; sprintf(s, "Bad character state (%c)", ch); Abort(s); }
-      
+	public:	
       void ReserveOriginalCounts(){
       		if(origCounts==NULL) origCounts=new int[nChar];
       		for(int i=0;i<nChar;i++){
@@ -443,11 +465,10 @@ protected:
       			}
       		}
       void Reweight(FLOAT_TYPE prob);
-      int BootstrapReweight(int seedToUse, FLOAT_TYPE resampleProportion);
+      virtual int BootstrapReweight(int seedToUse, FLOAT_TYPE resampleProportion);
 	  void CountMissingCharsByColumn(vector<int> &vec);
 	  void MakeWeightSetString(NxsCharactersBlock &charblock, string &wtstring, string name);
       void MakeWeightSetString(std::string &wtstring, string name);
-#endif
 };
 
 #endif

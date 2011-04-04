@@ -66,7 +66,7 @@ env CXXFLAGS=-DNCL_CONST_FUNCS ./configure --prefix=`pwd`/installed --disable-sh
 make || exit
 echo "BUILDING NCL ..."
 make install || exit
-make installcheck || exit
+#make installcheck || exit
 cd ..
 
 echo "CONFIGURING GARLI ..."

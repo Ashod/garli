@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 0.96b8 source code
+// Copyright 2005-2008 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -163,7 +163,7 @@ char *TreeNode::MakeNewick(char *s, bool internalNodes, bool branchLengths, bool
 	return s;
 	}
 
-void TreeNode::MakeNewick(string &outStr, const SequenceData *data, bool internalNodes, bool branchLengths, bool taxonNames /*=false*/, bool highPrec /*=false*/) const{
+void TreeNode::MakeNewick(string &outStr, const DataPartition *data, bool internalNodes, bool branchLengths, bool taxonNames /*=false*/, bool highPrec /*=false*/) const{
 	char s[500];
 	if(left){
 		if(internalNodes==true && nodeNum!=0){
@@ -226,7 +226,7 @@ void TreeNode::MakeNewickForSubtree(char *s) const{
 	*s++='\0';
 	}
 
-void TreeNode::MakeNewickForSubtree(string &s, const SequenceData *data, bool internalNodes, bool branchLengths, bool taxonNames, bool highPrec) const{
+void TreeNode::MakeNewickForSubtree(string &s, const DataPartition *data, bool internalNodes, bool branchLengths, bool taxonNames, bool highPrec) const{
 	assert(left);
 	s += '(';
 	left->MakeNewick(s, data, internalNodes, branchLengths, taxonNames, highPrec);
@@ -580,10 +580,12 @@ void TreeNode::OutputNodeConnections(){
 		cout << dlen << "\t" << endl;
 		nd = left;
 		while(nd){
-			if(nd->IsInternal())
-				nd->OutputNodeConnections();
+			nd->OutputNodeConnections();
 			nd = nd->next;
 			}
+		}
+	else{
+		cout << nodeNum << "\t" << dlen << endl;
 		}
 	}
 
@@ -746,7 +748,7 @@ void TreeNode::RecursivelyAddOrRemoveSubtreeFromBipartitions(const Bipartition &
 	}
 
 //unsigned MATCH_II=0, MATCH_TT=0, MATCH_IT=0, TOT_II=0, TOT_IT=0, TOT_TT=0;
-
+/*
 void TreeNode::SetEquivalentConditionalVectors(const SequenceData *data){
 	if(nodeNum == 0){
 		if(left->IsInternal()) left->SetEquivalentConditionalVectors(data);
@@ -821,7 +823,8 @@ void TreeNode::SetEquivalentConditionalVectors(const SequenceData *data){
 			}
 		}
 	}
-/*
+*/
+ /*
 void TreeNode::OutputBinaryNodeInfo(ofstream &out) const{
 	int zero = 0;
 

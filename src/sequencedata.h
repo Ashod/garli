@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -30,9 +30,9 @@ using namespace std;
 class SequenceData : public DataMatrix{
 public:
 	SequenceData() : DataMatrix()
-		{ maxNumStates=4; strcpy( info, "DNA" ); empStateFreqs=NULL;}
+		{ maxNumStates=4; strcpy( info, "DNA" ); empStateFreqs=NULL; numConditioningPatterns = 0;}
 	SequenceData( int ntax, int nchar ) : DataMatrix( ntax, nchar )
-		{ maxNumStates=4; strcpy( info, "DNA" ); empStateFreqs=NULL;}
+		{ maxNumStates=4; strcpy( info, "DNA" ); empStateFreqs=NULL; numConditioningPatterns = 0;}
 	virtual ~SequenceData() {
 		if(empStateFreqs != NULL) delete []empStateFreqs;
 		}
@@ -40,7 +40,7 @@ public:
 protected:
 	FLOAT_TYPE *empStateFreqs;
 	// overrides of base class's virtual fuctions
-	virtual unsigned char CharToDatum( char ch ) = 0;
+	virtual unsigned char CharToDatum( char ch ) const = 0;
 	virtual unsigned char CharToBitwiseRepresentation( char ch ) const;
 	virtual char	DatumToChar( unsigned char d ) const;
 	virtual unsigned char	FirstState() const { return 0; }
@@ -54,9 +54,10 @@ public:
 		assert(empStateFreqs);
 		for(int i=0;i<maxNumStates;i++) f[i]=empStateFreqs[i];
 		}
+	virtual void AddDummyRootToExistingMatrix();
 	};
 
-inline unsigned char SequenceData::CharToDatum( char ch ){
+inline unsigned char SequenceData::CharToDatum( char ch ) const{
 	unsigned char datum;
 
 	if( ch == 'A' || ch == 'a' )
@@ -73,7 +74,7 @@ inline unsigned char SequenceData::CharToDatum( char ch ){
 		datum = MISSING_DATA;
 	}
 	else
-		THROW_BADSTATE(ch);
+		throw ErrorException("Unknown character \"%c\" in SequenceData::CharToDatum", ch); 
 
 	return datum;
 }
@@ -165,10 +166,11 @@ public:
 #endif
 		}
 
-	unsigned char CharToDatum(char d) ;
+	unsigned char CharToDatum(char d) const;
 	void CalcEmpiricalFreqs();
 	void CreateMatrixFromNCL(const NxsCharactersBlock *charblock, NxsUnsignedSet &charset);
 	void MakeAmbigStrings();
+	void AddDummyRootToExistingMatrix();
 	char *GetAmbigString(int i) const{
 		return ambigStrings[i];
 		}
@@ -205,7 +207,6 @@ class GeneticCode{
 	GeneticCode(){
 		SetStandardCode();
 		}
-
 	void SetStandardCode(){
 		codonTable[ 0 ]= 8;
 		codonTable[ 1 ]= 11;
@@ -357,7 +358,7 @@ class GeneticCode{
 		codonTable[ 50 ]= 21;
 		codonTable[ 56 ]= 21;
 		}
-
+		
 	void SetVertMitoCode(){
 		SetStandardCode();
 		codonTable[56] = 18; //TGA
@@ -453,7 +454,7 @@ class GeneticCode{
 		codonTable[ 48 ]= 21;
 		codonTable[ 50 ]= 21;
 		}
-
+		
 	void SetInvertMitoCode(){
 		SetStandardCode();
 		codonTable[56] = 18; //TGA
@@ -633,17 +634,12 @@ public:
 	~CodonData(){}
 
 	void FillCodonMatrixFromDNA(const NucleotideData *);
-	unsigned char CharToDatum(char c)  {
+	unsigned char CharToDatum(char c) const{
 		//this shouldn't be getting called, as it makes no sense for codon data
 		assert(0);
 		return 0;
 		}
-	void CreateMatrixFromNCL(const NxsCharactersBlock *){
-		//this also should not be getting called.  The codon matrix
-		//is created from a DNA matrix that has been read in, possibly
-		//by the NCL
-		assert(0);
-		}
+
 	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset){
 		//this also should not be getting called.  The codon matrix
 		//is created from a DNA matrix that has been read in, possibly
@@ -662,11 +658,6 @@ public:
 	//int ComparePatterns( const int i, const int j ) const;
 	void SetVertMitoCode() {code.SetVertMitoCode();}
 	void SetInvertMitoCode() {code.SetInvertMitoCode();}
-/*	these don't make sense in a standard codon model context since it doesn' change whether anything is an S or NS change
-	void SetStandardTwoSerineCode() {code.SetStandardTwoSerineCode();}
-	void SetVertMitoTwoSerineCode() {code.SetVertMitoTwoSerineCode();}
-	void SetInvertMitoTwoSerineCode() {code.SetInvertMitoTwoSerineCode();}
-*/
 };
 
 
@@ -706,9 +697,262 @@ public:
 		}
 	void FillAminoacidMatrixFromDNA(const NucleotideData *dat, GeneticCode *code);
 	void CalcEmpiricalFreqs();
-	unsigned char CharToDatum(char d) ;
+	unsigned char CharToDatum(char d) const;
 	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
 	};
+
+class DataPartition {
+private:
+	vector<SequenceData *> dataSubsets;
+	int nTax;
+public:
+	void AddSubset(SequenceData* sub){
+		dataSubsets.push_back(sub);
+		nTax = sub->NTax();
+		}
+	SequenceData *GetSubset(int num) const{
+		if(num < 0 || (num < dataSubsets.size()) == false) throw ErrorException("Tried to access invalid subset number");
+		return dataSubsets[num];
+		}
+	void Delete(){
+		for(vector<SequenceData *>::iterator it = dataSubsets.begin();it != dataSubsets.end(); it++)
+			delete *it;
+		dataSubsets.clear();
+		}
+	int NTax() const {return nTax;}
+	int NumSubsets() const {return dataSubsets.size();}
+	void BeginNexusTreesBlock(string &trans) const {dataSubsets[0]->BeginNexusTreesBlock(trans);}
+	void BeginNexusTreesBlock(ofstream &out) const {dataSubsets[0]->BeginNexusTreesBlock(out);}
+	NxsString TaxonLabel(int t) const {return dataSubsets[0]->TaxonLabel(t);}
+	int TaxonNameToNumber(NxsString name) const{return dataSubsets[0]->TaxonNameToNumber(name);}
+
+	void AddDummyRoots(){
+		nTax++;
+		for(int p = 0;p < NumSubsets();p++){
+			dataSubsets[p]->AddDummyRootToExistingMatrix();
+			assert(nTax == dataSubsets[p]->NTax());
+			}
+		}
+	int BootstrapReweight(int seedToUse, FLOAT_TYPE resampleProportion){
+		int nextSeed = seedToUse;
+		for(int p = 0;p < NumSubsets();p++){
+			outman.UserMessage("\tSubset %d: Random seed for bootstrap reweighting: %d", p + 1, nextSeed);
+			SequenceData *curData = GetSubset(p);
+			nextSeed = curData->BootstrapReweight(nextSeed, resampleProportion);
+			}
+		return nextSeed;
+		}
+	};
+
+class DataSubsetInfo{
+public:
+	int garliSubsetNum;
+	int charblockNum;
+	string charblockName;
+	int partitionSubsetNum;
+	string partitionSubsetName;
+	enum type{
+		NUCLEOTIDE = 0,
+		AMINOACID = 1,
+		CODON = 2, 
+		NSTATE= 3,
+		NSTATEV = 4,
+		ORDNSTATE = 5,
+		ORDNSTATEV = 6,
+		ORIENTEDGAP = 7,
+		BINARY = 8,
+		BINARY_NOT_ALL_ZEROS = 9
+		}readAs, usedAs;
+	int totalCharacters;
+	int uniqueCharacters;
+	string outputNames[10];//{"Nucleotide data", "Amino acid data", "Codon data"};
+	DataSubsetInfo(int gssNum, int cbNum, string cbName, int psNum, string psName, type rAs, type uAs) :
+		garliSubsetNum(gssNum), charblockNum(cbNum), charblockName(cbName), partitionSubsetNum(psNum), partitionSubsetName(psName), readAs(rAs), usedAs(uAs){
+			outputNames[NUCLEOTIDE]="Nucleotide data";
+			outputNames[AMINOACID]="Amino acid data";
+			outputNames[CODON]="Codon data";
+			outputNames[NSTATE]="Standard k-state data";
+			outputNames[NSTATEV]="Standard k-state data, variable only";
+			outputNames[ORDNSTATE]="Standard ordered k-state data";
+			outputNames[ORDNSTATEV]="Standard ordered k-state data, variable only";
+			outputNames[ORIENTEDGAP]="Gap-coded data, oriented with respect to time";
+			outputNames[BINARY]="Binary data";
+			outputNames[BINARY_NOT_ALL_ZEROS]="Binary data, no constant state 0 chars";
+			}
+	void Report(){
+		outman.UserMessage("GARLI data subset %d", garliSubsetNum+1);
+		outman.UserMessage("\tCHARACTERS block #%d (\"%s\")", charblockNum+1, charblockName.c_str());
+		if(partitionSubsetNum >= 0) outman.UserMessage("\tCHARPARTITION subset #%d (\"%s\")", partitionSubsetNum+1, partitionSubsetName.c_str());
+		outman.UserMessage("\tData read as %s,\n\tmodeled as %s", outputNames[readAs].c_str(), outputNames[usedAs].c_str());
+		}
+	};
+/*
+//
+// Mk type model, with binary data
+class BinaryData : public SequenceData{
+	public:
+		BinaryData() : SequenceData(){
+			maxNumStates = 2;
+			}
+
+		unsigned char CharToDatum(char d);
+		char DatumToChar( unsigned char d );
+		void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
+		void CalcEmpiricalFreqs(){
+			//BINARY - this might actually make sense for gap encoding
+			}
+		//this is just a virtual overload that avoids doing anything if determine const is called with inappropriate data
+		void DetermineConstantSites(){};
+	};
+
+inline unsigned char BinaryData::CharToDatum( char ch ){
+	unsigned char datum;
+
+	if( ch == '0' || ch == '-' )
+		datum = 0;
+	else if( ch == '1' || ch == '+' )
+		datum = 1;
+	else if( ch == '?' )
+		datum = 2;
+	else
+      THROW_BADSTATE(ch);
+
+	return datum;
+	}
+
+inline char BinaryData::DatumToChar( unsigned char d ){
+	char ch = 'X';	// ambiguous
+
+	if( d == 2 )
+		ch = '?';
+	else if( d == 0 )
+		ch = '0';
+	else if( d == 1 )
+		ch = '1';
+
+	return ch;
+	}
+*/
+//
+// Mk or Mkv type model, with n-state data
+class NStateData : public SequenceData{
+	public:
+		enum{
+			ALL = 0,
+			ONLY_VARIABLE = 1,
+			ONLY_INFORM = 2,
+			BINARY = 3,
+			BINARY_NOT_ALL_ZEROS = 4
+			}datatype;
+		enum{
+			UNORDERED = 0,
+			ORDERED = 1
+			}modeltype;
+		NStateData() : SequenceData(){
+			maxNumStates = 99;
+			}
+		NStateData(int ns) : SequenceData(){
+			maxNumStates = ns;
+			}
+		//NStateData(int ns, bool isMkv, bool isOrdered) : SequenceData(){'
+		NStateData(int ns, bool isOrdered, bool isBinary, bool isConditioned) : SequenceData(){
+			if(isBinary){
+				if(isConditioned)
+					datatype = BINARY_NOT_ALL_ZEROS;
+				else
+					datatype = BINARY;
+				}
+			else if(isConditioned)
+				datatype = ONLY_VARIABLE;
+			else 
+				datatype = ALL;
+			if(isOrdered)
+				modeltype = ORDERED;
+			else
+				modeltype = UNORDERED;
+			maxNumStates = ns;
+			}
+		void SetNumStates(int ns){maxNumStates = ns;}
+
+		virtual unsigned char CharToDatum(char d) const;
+		virtual char DatumToChar( unsigned char d ) const;
+		virtual void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
+		void CalcEmpiricalFreqs(){
+			//BINARY - this might actually make sense for gap encoding
+			}
+		//this is a virtual overload for NState because it might have to deal with the conditioning chars, which shouldn't be included in the resampling
+		int BootstrapReweight(int restartSeed, FLOAT_TYPE resampleProportion);
+		//this is just a virtual overload that avoids doing anything if determine const is called with inappropriate data
+		void DetermineConstantSites(){};
+	};
+
+inline unsigned char NStateData::CharToDatum( char ch ) const{
+	unsigned char datum;
+
+	if( ch == '0')
+		datum = 0;
+	else if( ch == '1')
+		datum = 1;
+	else if( ch == '2')
+		 datum = 2;
+	else if( ch == '3')
+		 datum = 3;
+	else if( ch == '4')
+		 datum = 4;
+	else if( ch == '5')
+		 datum = 5;
+	else if( ch == '6')
+		 datum = 6;
+	else if( ch == '7')
+		 datum = 7;
+	else if( ch == '8')
+		 datum = 8;
+	else if( ch == '9')
+		 datum = 9;
+	else if( ch == '?')
+		datum = 99;
+	else
+      throw ErrorException("Unknown character \"%c\" in NStateData::CharToDatum", ch); 
+
+	return datum;
+	}
+
+inline char NStateData::DatumToChar( unsigned char d ) const{
+	//NSTATE - not sure how this should work, but it isn't that important anyway
+	
+	char ch = 'X';	// ambiguous
+/*
+	if( d == 2 )
+		ch = '?';
+	else if( d == 0 )
+		ch = '0';
+	else if( d == 1 )
+		ch = '1';
+*/
+	return ch;
+	}
+
+class OrientedGapData : public NStateData{
+	public:
+		OrientedGapData() : NStateData(){
+			maxNumStates = 2;
+			}
+		OrientedGapData(int ns) : NStateData(){
+			assert(0);
+			}
+		OrientedGapData(int ns, bool isMkv) : NStateData(){
+			assert(0);
+			}
+		void SetNumStates(int ns){maxNumStates = ns;}
+
+		virtual void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
+		void CalcEmpiricalFreqs(){
+			//BINARY - this might actually make sense for gap encoding
+			}
+		//this is just a virtual overload that avoids doing anything if determine const is called with inappropriate data
+		void DetermineConstantSites(){};
+	};
+
 
 #endif
 

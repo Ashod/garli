@@ -34,7 +34,7 @@ class ErrorException{
 	
 	public:
 	char *message;
-	int messlen;
+	size_t messlen;
 	//char message[5000];
 	//char message[400];
 	ErrorException(){
@@ -116,5 +116,10 @@ class ErrorException{
 		}
 	};
 	
+class UnscoreableException{
+public:
+	UnscoreableException(){};
+	};
+
 #endif
 

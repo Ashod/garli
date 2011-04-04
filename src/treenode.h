@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -29,9 +29,6 @@ using namespace std;
 #include "clamanager.h"
 #include "bipartition.h"
 
-/* GANESH included the following #includes */
-#include "hashdefines.h"
-
 class NucleotideData;
 class MFILE;
 
@@ -46,9 +43,10 @@ class TreeNode{
 		bool attached;
 		bool alreadyOptimized;
 		Bipartition *bipart;
-		char *tipData;
+		vector<char *> tipData;
 #ifdef OPEN_MP
-		unsigned *ambigMap;
+		//unsigned *ambigMap;
+		vector<unsigned *> ambigMap;
 #endif
 
 		TreeNode( const int i = -1 );
@@ -78,9 +76,9 @@ class TreeNode{
 		void CollapseMinLengthBranches(int &);
 		//misc functions
 		char *MakeNewick(char *s, bool internalNodes, bool branchLengths, bool highPrec=false) const;
-		void MakeNewick(string &outStr, const SequenceData *data, bool internalNodes, bool branchLengths, bool taxonNames = false, bool highPrec = false) const;
+		void MakeNewick(string &outStr, const DataPartition *data, bool internalNodes, bool branchLengths, bool taxonNames = false, bool highPrec = false) const;
 		void MakeNewickForSubtree(char *s) const;
-		void MakeNewickForSubtree(string &s, const SequenceData *data, bool internalNodes, bool branchLengths, bool taxonNames = false, bool highPrec = false) const;
+		void MakeNewickForSubtree(string &s, const DataPartition *data, bool internalNodes, bool branchLengths, bool taxonNames = false, bool highPrec = false) const;
 		bool IsGood();
 		bool IsTerminal() const{
 			return left == NULL;
@@ -117,7 +115,6 @@ class TreeNode{
 		void FindCrazyShortBranches();
 		void CheckTreeFormation();
 		void OutputNodeConnections();
-
 };
 
 inline void TreeNode::CopyOneClaIndex(const TreeNode *from, ClaManager *claMan, int dir){

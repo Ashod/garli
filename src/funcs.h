@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -37,14 +37,14 @@ class StateSet{
 	public:
 		StateSet(int ns){
 			numStates = ns;
-			assert(numStates == 4 || numStates == 20);
+			assert(numStates == 4 || numStates == 20 || numStates == 21);
 			if(numStates == 4){
 				states.push_back("A");
 				states.push_back("C");
 				states.push_back("G");
 				states.push_back("T");
 				}
-			else if(numStates == 20){
+			else if(numStates > 19){
 				states.push_back("A");
 				states.push_back("C");
 				states.push_back("D");
@@ -66,6 +66,8 @@ class StateSet{
 				states.push_back("W");
 				states.push_back("Y");
 				}
+			if(numStates == 21)
+				states.push_back("Z");
 			}
 		StateSet(const GeneticCode *code){
 			numStates = code->NumStates();
@@ -88,7 +90,7 @@ class InternalState{
 		int best;
 		int numStates;
 		vector<FLOAT_TYPE> probs;
-
+	
 	public:
 		InternalState(int ns){
 			numStates = ns;
@@ -102,11 +104,11 @@ class InternalState{
 			for(int s = 0;s < numStates;s++)
 				tot += tots[s];
 			for(int i=0;i<numStates;i++){
-				probs[i]=tots[i]/tot;
+			probs[i]=tots[i]/tot;
 				if(probs[i] > bestVal){
 					bestVal = probs[i];
 					best = i;
-					}
+		}
 				}
 			}
 	void Output(ofstream &out, const StateSet &states) const{
@@ -135,7 +137,7 @@ int FileExists(const char* s);
 bool FileIsFasta(const char *name);
 bool FileIsNexus(const char *name);
 int ReadData(GeneralGamlConfig *, SequenceData* data);
-bool ReadData(const char* filename, SequenceData* data);
+bool ReadData(const char* filename);
 //void GetRestartParams(Parameters& params);
 int RandomInt(int lb, int ub);
 FLOAT_TYPE RandomFrac();
@@ -168,7 +170,7 @@ inline void ArrayMultiply(FLOAT_TYPE *dest, const FLOAT_TYPE *source, int num){
 	for(register int i=0;i<num;i++)
 		*(dest++) *= *(source++);
 	}
-
+	
 inline void CalcSiteCLARateHetEquals(FLOAT_TYPE *dest, const FLOAT_TYPE *tCL, const FLOAT_TYPE *tp){
 	//this function assumes that the pmat is arranged with the 16 entries for the
 	//first rate, followed by 16 for the second, etc.
@@ -194,7 +196,7 @@ inline void CalcSiteCLARateHetTimes(FLOAT_TYPE *dest, const FLOAT_TYPE *tCL, con
 		tCL+=4;
 		}
 					}
-
+			 
 
 
 

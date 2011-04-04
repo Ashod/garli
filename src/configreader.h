@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -40,6 +40,8 @@ public:
 	int AddSection(const char*);
 	int RemoveSection(const char*);
 	int SetSection(const char*);
+	const string GetCurrentSection();
+	void MakeAllSection();
 
 	int SetOption(const char*, const char*);
 	int RemoveOption(const char*);

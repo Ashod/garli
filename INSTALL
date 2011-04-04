@@ -8,7 +8,7 @@ download one of the pre-compiled binaries.
 problems, please email garli.support@gmail.com)
 ------
 
-EXTRA EASY COMPILATION INSTRUCTIONS:
+EXTRA EASY COMPILATION INSTRUCTIONS (USE OF THIS IS RECOMMENDED!):
 (added Sept. 2008)
 If this is a version with the NCL source code bundled (there
 will be an ncl-2.1.xx.tar.gz file in the same directory as this
@@ -43,7 +43,7 @@ build_garli.sh script like this:
 env CC=icc CXX=icpc ./build_garli.sh
 
 ->If you want to pass other arguments to GARLI's configure script, 
-(you have no reason to do so) list them at the end, e.g.
+(you have no particular reason to do so) list them at the end, e.g.
 
 ./build_garli.sh [--ncl-svn] --enable-asserts
 
@@ -58,12 +58,13 @@ copy of the Nexus Class Library by Paul Lewis and Mark Holder.
 The NCL source can be obtained via the Sourceforge project page:
 http://sourceforge.net/projects/ncl/
 or can be obtained by anonymous svn:
-http://zwickl@ncl.svn.sourceforge.net/svnroot/ncl/branches/v2.1
+svn co http://ncl.svn.sourceforge.net/svnroot/ncl/trunk/
 
 VERY IMPORTANT:
 -NCL version 2.1 or better is required to compile GARLI.
 -You MUST run NCL's configure script with NCL_CONST_FUNCS defined.  
 See below for how to do this
+------
 
 You can choose to compile GARLI with the NCL library either statically
 or dynamically linked in.  Note that whether GARLI will link 
@@ -79,7 +80,7 @@ system after compilation of GARLI.
 Configure and build NCL like this (the shared NCL library will not
 be made):
 (from the NCL source root directory)
-env CXXFLAGS=-DNCL_CONST_FUNCS ./configure --prefix=<install directory> --disable-shared
+env CPPFLAGS=-DNCL_CONST_FUNCS ./configure --prefix=<install directory> --disable-shared
 make
 make install
 
@@ -91,8 +92,8 @@ be using it on that machine.  In those cases, configure and build as
 shown below (you can omit the prefix if you want to
 just install globally into the normal location at /usr/local/):
 (from the NCL source root directory)
-env CXXFLAGS=-DNCL_CONST_FUNCS ./configure --prefix=<install directory>
-make 
+env CPPFLAGS=-DNCL_CONST_FUNCS ./configure --prefix=<install directory>
+make
 make install
 
 ####BUILDING GARLI####
@@ -143,7 +144,7 @@ so be sure to set CC=icc and CXX=icpc)
 (build the MPI run distributing version.  It should automatically determine
 the correct MPI compiler script name (e.g. mpiCC) but if the underlying compiler
 is not gcc (try "mpiCC --version" to check) you should also set CC and CXX to the
-corresponding compiler type to get the right compilation flags) 
+corresponding compiler type (e.g., CC=icc and CXX=icpc) to get the right compilation flags) 
 
 --help
 (list other options of the configure script)

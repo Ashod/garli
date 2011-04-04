@@ -18,7 +18,6 @@ noinst_HEADERS = \
 	errorexception.h \
 	funcs.h \
 	garlireader.h \
-	hashdefines.h \
 	individual.h \
 	linalg.h \
 	memchk.h \
@@ -33,25 +32,12 @@ noinst_HEADERS = \
 	set.h \
 	stopwatch.h \
 	threaddcls.h \
-	topologylist.h \
 	translatetable.h \
 	tree.h \
 	treenode.h \
-	utility.h \
-	cudaman.h \
-	cudakernel.cu
-
-if CUDASOURCE
-.cu.o:
-	$(NVCC) -o $@ -c $< $(NVCCFLAGS)
-
-CUDASRCS = \
-	cudainterface.cu \
-	cudaman.cpp 
-endif
+	utility.h 
 
 Garli_SOURCES = \
-	$(CUDASRCS) \
 	adaptation.cpp \
 	bipartition.cpp \
 	condlike.cpp \
@@ -70,11 +56,10 @@ Garli_SOURCES = \
 	rng.cpp \
 	sequencedata.cpp \
 	set.cpp \
-	topologylist.cpp \
 	translatetable.cpp \
 	tree.cpp \
 	treenode.cpp \
-	mpitrick.cpp 
+	mpitrick.cpp
 
 
 Garli_LDADD =  $(LDADD) @GARLI_LIBS@
@@ -83,8 +68,4 @@ install-exec-hook:
 	cd $(DESTDIR)$(bindir) && \
 	  mv -f Garli$(EXEEXT) Garli-$(VERSION)$(EXEEXT) && \
 	  $(LN_S) Garli-$(VERSION)$(EXEEXT) Garli$(EXEEXT)
-uninstall:
-	test "$(DESTDIR)$(bindir)/Garli$(EXEEXT)" -ef "$(DESTDIR)$(bindir)/Garli-$(VERSION)$(EXEEXT)" && rm "$(DESTDIR)$(bindir)/Garli$(EXEEXT)" || true
-	rm -f "$(DESTDIR)$(bindir)/Garli-$(VERSION)$(EXEEXT)"
-	
-	
+

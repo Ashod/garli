@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -22,11 +22,10 @@
 #if defined(HAVE_CONFIG_H)
 	#include "config.h"
 #endif
-
 //these will be defined by either the Microsoft compiler
 //or the intel compiler when openmp support is turned on
 //by compiling with /openmp (ms) or -openmp (icc)
-//Nothing else should need to be defined anywhere to get
+//Nothing else should need to be defined anywhere to get 
 //openMP working
 #if defined (__OPENMP) || defined (_OPENMP)
 	#include "omp.h"
@@ -35,7 +34,7 @@
 	#define OMP_INTTERMCLA
 	#define OMP_TERMDERIV
 	#define OMP_INTDERIV
-
+	
 	#define OMP_INTINTCLA_NSTATE
 	#define OMP_INTTERMCLA_NSTATE
 	#define OMP_TERMDERIV_NSTATE
@@ -50,37 +49,22 @@
 #endif
 */
 
-//#undef CUDA_GPU
-//#ifdef CUDA_GPU
-//	#define CUDA_MEMORY_PINNED
-//#endif
-
-#ifdef CUDA_GPU
-	#define CUDA_TEST_ITERATIONS 10
-	#define CUDA_PRINT_TESTS 0
-	#define CUDA_PRINT_DEVICE_QUERY 0
-#endif
-
 #define USE_COUNTS_IN_BOOT
 
 //#undef OPT_DEBUG
 
+#define ONE_BRANCH_INS_DEL
+
 //The ONLY thing that should need to be done to turn on memcheck leak detection
-//should be defining MONITORING_ALLOCATION 
-//#undef MONITORING_ALLOCATION
+//should be defining MONITORING_ALLOCATION here
+#undef MONITORING_ALLOCATION
 #include "memchk.h"
 
-//7-09 A few newer features now made permanant after testing
 #define ADAPTIVE_BOUNDED_OPT
-#define MORE_DETERM_PARAM_OPT
+#define ALT_NR_BAIL
 #define PUSH_TO_MIN_BLEN
-#define FINAL_RESTORE_BLENS
-#define OPT_BOUNDED_RESTORE
 #define SUM_AA_REL_RATES
 #define NEW_BUMPING
-#define ALT_NR_BAIL
-
-#define CONSTRAINTS
 #define STOCHASTIC_STARTING_BLENS
 #undef IGNORE_SMALL_TOPO_IMP
 #undef INCLUDE_PERTURBATION
@@ -123,6 +107,9 @@ typedef double MODEL_FLOAT;
 	#define DEF_MAX_BRLEN 100.0
 	#define DEF_STARTING_BRLEN 0.05
 	#define GARLI_FP_EPS DBL_EPSILON
+	#if !defined(LUMP_FREQ)
+		#define LUMP_FREQ 400
+	#endif
 #endif
 
 #define MAXPATH   		256

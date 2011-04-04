@@ -1,5 +1,5 @@
-// GARLI version 1.00 source code
-// Copyright 2005-2010 Derrick J. Zwickl
+// GARLI version 2.0 source code
+// Copyright 2005-2011 Derrick J. Zwickl
 // email: zwickl@nescent.org
 //
 //  This program is free software: you can redistribute it and/or modify
@@ -18,6 +18,7 @@
 #include <string.h>
 #include <cassert>
 #include <iostream>
+#include <vector>
 #include <climits>
 
 using namespace std;
@@ -48,6 +49,7 @@ GeneralGamlConfig::GeneralGamlConfig(){
 
 	//starting the run
 	randseed = -1;
+	bootstrapSeed = -1;
 	streefname = "random";
 	refineStart = true;
 	refineEnd = true;
@@ -70,7 +72,14 @@ GeneralGamlConfig::GeneralGamlConfig(){
 	siteWindowLength = 0;
 	siteWindowStride = 0;
 
+	combineAdjacentIdenticalGapPatterns = false;
+
 	usePatternManager = false;
+	rootAtBranchMidpoint = false;
+	useOptBoundedForBlen = false;
+	optimizeInputOnly = false;
+	//this should really not be necessary, but for some reason not explicitly initializing it was causing problems with icc
+	parameterValueString = "";
 
 	//finishing the run
 	enforceTermConditions = true;
@@ -80,14 +89,8 @@ GeneralGamlConfig::GeneralGamlConfig(){
 	stoptime = UINT_MAX;
 	swapTermThreshold = 0;
 
-	//default model is GTR+I+G
-	stateFrequencies = "estimate";
-	rateMatrix = "6rate";
-	proportionInvariant = "estimate";
-	rateHetModel = "gamma";
-	numRateCats = 4;
-	datatype = "dna";
-	geneticCode = "standard";
+	linkModels = false;
+	subsetSpecificRates = true;
 
 	//general population stuff
 	nindivs = 4;
@@ -142,6 +145,8 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 		return -1;
 	}
 	
+	cr.MakeAllSection();
+
 	int errors = 0;
 	errors += cr.SetSection("general");
 	if(errors < 0) throw ErrorException("Didn't find [general] section in config file\n     (this section heading is required)");
@@ -156,6 +161,7 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 	errors += cr.GetStringOption("streefname", streefname);
 	cr.GetStringOption("constraintfile", constraintfile, true);
 	errors += cr.GetIntNonZeroOption("randseed", randseed);
+	cr.GetIntNonZeroOption("bootstrapseed", bootstrapSeed, true);
 	errors += cr.GetBoolOption("refinestart", refineStart);
 	cr.GetBoolOption("refineend", refineEnd, true);
 	errors += cr.GetBoolOption("outputeachbettertopology", outputTreelog);
@@ -166,6 +172,7 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 	cr.GetUnsignedNonZeroOption("attachmentspertaxon", attachmentsPerTaxon, true);
 	cr.GetUnsignedOption("outputsitelikelihoods", outputSitelikelihoods, true);
 	cr.GetBoolOption("reportrunprogress", reportRunProgress, true);
+	cr.GetBoolOption("optimizeinputonly", optimizeInputOnly, true);
 
 	cr.GetBoolOption("outputmostlyuselessfiles", outputMostlyUselessFiles, true);
 	cr.GetBoolOption("outputphyliptree", outputPhylipTree, true);
@@ -176,6 +183,11 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 	cr.GetUnsignedOption("windowlength", siteWindowLength, true);
 	cr.GetUnsignedOption("windowstride", siteWindowStride, true);
 	cr.GetBoolOption("usepatternmanager", usePatternManager, true);
+	cr.GetStringOption("parametervaluestring", parameterValueString, true);
+	cr.GetBoolOption("combineadjacentidenticalgappatterns", combineAdjacentIdenticalGapPatterns, true);
+
+	cr.GetBoolOption("rootatbranchmidpoint", rootAtBranchMidpoint, true);
+	cr.GetBoolOption("useoptboundedforblen", useOptBoundedForBlen, true);
 
 	//changed the wording of this from besttree to besttopology, to match outputeachbettertopology
 	//still allow besttree, since that is what I told Maddison, and I think has already been incorporated
@@ -187,24 +199,35 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 	cr.GetBoolOption("restart", restart, true);
 	cr.GetBoolOption("writecheckpoints", checkpoint, true);
 
-	//after changes to Population, this is now allowed
-//	if((restart || checkpoint) && collapseBranches)
-//		throw ErrorException("Sorry, the collapsebranches option can not currently be used with checkpointing");
-
 	cr.GetUnsignedNonZeroOption("searchreps", searchReps, true);
 	cr.GetUnsignedOption("runmode", runmode, true);
 	cr.GetBoolOption("scoreonly", scoreOnly, true);
 
-	//cr.GetBoolOption("useflexrates", useflexrates, true);
-	//cr.GetBoolOption("dontinferproportioninvariant", dontInferProportionInvariant, true);
-	cr.GetStringOption("ratehetmodel", rateHetModel, true);
-	cr.GetUnsignedOption("numratecats", numRateCats, true);	
-	cr.GetStringOption("statefrequencies", stateFrequencies, true);
-	cr.GetStringOption("ratematrix", rateMatrix, true);
-	if(cr.GetStringOption("invariantsites", proportionInvariant, true) == -1)
-		proportionInvariant = "unspecified";
-	cr.GetStringOption("datatype", datatype, true);
-	cr.GetStringOption("geneticcode", geneticCode, true);
+	//These three used to be in the [master] section, for no apparent reason. Now allowed in [general] 
+	//as well.  If in both, will be overridden by master
+	cr.GetUnsignedOption("bootstrapreps", bootstrapReps, true);
+	cr.GetPositiveNonZeroDoubleOption("resampleproportion", resampleProportion, true);
+	cr.GetBoolOption("inferinternalstateprobs", inferInternalStateProbs, true);
+
+	bool multipleModelsFound = ReadPossibleModelPartition(cr);
+
+	if(!multipleModelsFound){//if we didn't find multiple models in separate model sections, look for them in 
+		ConfigModelSettings configModSet;
+		int settingsFound = 0;
+		settingsFound += cr.GetStringOption("ratehetmodel", configModSet.rateHetModel, true);
+		settingsFound += cr.GetUnsignedOption("numratecats", configModSet.numRateCats, true);	
+		settingsFound += cr.GetStringOption("statefrequencies", configModSet.stateFrequencies, true);
+		settingsFound += cr.GetStringOption("ratematrix", configModSet.rateMatrix, true);
+		settingsFound += cr.GetStringOption("invariantsites", configModSet.proportionInvariant, true);
+		settingsFound += cr.GetStringOption("datatype", configModSet.datatype, true);
+		settingsFound += cr.GetStringOption("geneticcode", configModSet.geneticCode, true);
+		if(settingsFound == -7)
+			throw ErrorException("No model descriptions found in config file.  Proper setup is either:\n\t1. Model settings found somewhere under [general] heading,\n\t   applying to all data subsets\n\t2. Separate model settings for each partition subset\n\t   found under different headings [model1], [model2]. etc");
+		configModelSets.push_back(configModSet);
+		}
+
+	cr.GetBoolOption("linkmodels", linkModels, true);
+	cr.GetBoolOption("subsetspecificrates", subsetSpecificRates, true);
 
 	cr.GetStringOption("outgroup", outgroupString, true);
 
@@ -247,11 +270,10 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 
 	cr.GetUnsignedOption("bootstrapreps", bootstrapReps, true);
 	cr.GetPositiveNonZeroDoubleOption("resampleproportion", resampleProportion, true);
+	cr.GetBoolOption("inferinternalstateprobs", inferInternalStateProbs, true);
 #ifdef MPI_VERSION
 	if(bootstrapReps != 0) throw ErrorException("Sorry, Bootstrap not yet implemented in parallel GARLI!");
 #endif
-
-	cr.GetBoolOption("inferinternalstateprobs", inferInternalStateProbs, true);
 
 #ifdef MPI_VERSION
 	if(isMaster==false) errors += cr.GetDoubleOption("sendinterval", sendInterval);
@@ -298,6 +320,38 @@ int GeneralGamlConfig::Read(const char* fname, bool isMaster /*=false*/)	{
 #endif
 	return errors;
 }
+
+bool GeneralGamlConfig::ReadPossibleModelPartition(ConfigReader &cr){
+	string origSection = cr.GetCurrentSection();
+	bool foundAnyModels = false;
+	for(int modelNum = 0; ;modelNum++){
+		char modName[10];
+		sprintf(modName, "model%d", modelNum);
+		int found = cr.SetSection(modName);
+		//models need to appear consecuatively, but can start at 0 (old) or 1 (new)
+		if(modelNum == 0 && found < 0){
+			continue;
+			}
+		else if(found < 0){
+			cr.SetSection(origSection.c_str());
+			return foundAnyModels;
+			}
+		else{
+			foundAnyModels = true;
+			ConfigModelSettings configModSet;
+			cr.GetStringOption("ratehetmodel", configModSet.rateHetModel, true);
+			cr.GetUnsignedOption("numratecats", configModSet.numRateCats, true);	
+			cr.GetStringOption("statefrequencies", configModSet.stateFrequencies, true);
+			cr.GetStringOption("ratematrix", configModSet.rateMatrix, true);
+			cr.GetStringOption("invariantsites", configModSet.proportionInvariant, true);
+			cr.GetStringOption("datatype", configModSet.datatype, true);
+			cr.GetStringOption("geneticcode", configModSet.geneticCode, true);
+			configModelSets.push_back(configModSet);
+			}
+		}
+	//we shouldn't be getting to here
+	return false;
+	}
 
 int GeneralGamlConfig::Serialize(char** buf_, int* size_) const	{
 	int& size = *size_;
