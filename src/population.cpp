@@ -275,6 +275,8 @@ void ClearDebugLogs(){
 
 Population::~Population()
 {
+//	EliminateDuplicateTreeReferences();  // TODO this be broken
+
 	if(indiv != NULL){
 		for (unsigned i = 0; i < total_size; ++i)	{
 			for (unsigned j = 0; j < total_size; ++j)	{
@@ -583,7 +585,7 @@ void Population::LoadNexusStartingConditions(){
 	NxsTreesBlock *treesblock = NULL;
 
 	if(reader.GetNumTaxaBlocks() == 1)
-		tax = reader.GetTaxaBlock(0);
+		reader.GetTaxaBlock(0);
 	else //I think this check happens in NCL as well, but best to be safe
 		throw ErrorException("multiple non-identical taxa blocks have been read");
 
@@ -993,8 +995,7 @@ void Population::ValidateInput(int rep){
 	if(conf->modWeight == ZERO_POINT_ZERO)
 		if(modSpec.IsCodon() && modSpec.gotOmegasFromFile == false) throw(ErrorException("sorry, to turn off model mutations you must provide omega values in a codon model.\nSet modweight to > 0.0 or provide omega values."));
 
-	//the treestruct could be null if there was a start file that contained no tree
-	if((_stricmp(conf->streefname.c_str(), "random") != 0) && (_stricmp(conf->streefname.c_str(), "stepwise") != 0) && (indiv[0].treeStruct != NULL)){
+	if((_stricmp(conf->streefname.c_str(), "random") != 0) && (_stricmp(conf->streefname.c_str(), "stepwise") != 0)){
 		bool foundPolytomies = indiv[0].treeStruct->ArbitrarilyBifurcate();
 		if(foundPolytomies) outman.UserMessage("WARNING: Polytomies found in start tree.  These were arbitrarily resolved.");
 		indiv[0].treeStruct->root->CheckTreeFormation();
@@ -1124,32 +1125,21 @@ void Population::SeedPopulationWithStartingTree(int rep){
 	//Here we'll error out if something was fixed but didn't appear
 	if((_stricmp(conf->streefname.c_str(), "random") == 0) || (_stricmp(conf->streefname.c_str(), "stepwise") == 0)){
 		//if no streefname file was specified, the param values should be in a garli block with the dataset
-		if(modSpec.IsNucleotide() && modSpec.IsUserSpecifiedStateFrequencies() && !modSpec.gotStateFreqsFromFile) 
-			throw(ErrorException("state frequencies specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
-		else if(modSpec.fixAlpha && !modSpec.gotAlphaFromFile) 
-			throw(ErrorException("alpha parameter specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
-		else if(modSpec.fixInvariantSites && !modSpec.gotPinvFromFile) 
-			throw(ErrorException("proportion of invariant sites specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
-		else if(modSpec.IsUserSpecifiedRateMatrix() && !modSpec.gotRmatFromFile) 
-			throw(ErrorException("relative rate matrix specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
-		else if(modSpec.IsCodon() && modSpec.fixOmega && !modSpec.gotOmegasFromFile) 
-			throw(ErrorException("rate het model set to nonsynonymousfixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
+		if(modSpec.IsNucleotide() && modSpec.IsUserSpecifiedStateFrequencies() && !modSpec.gotStateFreqsFromFile) throw(ErrorException("state frequencies specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
+		else if(modSpec.fixAlpha && !modSpec.gotAlphaFromFile) throw(ErrorException("alpha parameter specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
+		else if(modSpec.fixInvariantSites && !modSpec.gotPinvFromFile) throw(ErrorException("proportion of invariant sites specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
+		else if(modSpec.IsUserSpecifiedRateMatrix() && !modSpec.gotRmatFromFile) throw(ErrorException("relative rate matrix specified as fixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
+		else if(modSpec.IsCodon() && modSpec.fixOmega && !modSpec.gotOmegasFromFile) throw(ErrorException("rate het model set to nonsynonymousfixed, but no\n\tGarli block found in %s!!" , conf->datafname.c_str()));
 		}
 	else{
-		if((modSpec.IsNucleotide() || modSpec.IsAminoAcid()) && modSpec.IsUserSpecifiedStateFrequencies() && !modSpec.gotStateFreqsFromFile) 
-			throw ErrorException("state frequencies specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
-		else if(modSpec.fixAlpha && !modSpec.gotAlphaFromFile) 
-			throw ErrorException("alpha parameter specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
-		else if(modSpec.fixInvariantSites && !modSpec.gotPinvFromFile) 
-			throw ErrorException("proportion of invariant sites specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
-		else if(modSpec.IsUserSpecifiedRateMatrix() && !modSpec.gotRmatFromFile) 
-			throw ErrorException("relative rate matrix specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
-		else if(modSpec.IsCodon() && modSpec.fixOmega && !modSpec.gotOmegasFromFile) 
-			throw ErrorException("rate het model set to nonsynonymousfixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
+		if(modSpec.IsNucleotide() && modSpec.IsUserSpecifiedStateFrequencies() && !modSpec.gotStateFreqsFromFile) throw ErrorException("state frequencies specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
+		else if(modSpec.fixAlpha && !modSpec.gotAlphaFromFile) throw ErrorException("alpha parameter specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
+		else if(modSpec.fixInvariantSites && !modSpec.gotPinvFromFile) throw ErrorException("proportion of invariant sites specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
+		else if(modSpec.IsUserSpecifiedRateMatrix() && !modSpec.gotRmatFromFile) throw ErrorException("relative rate matrix specified as fixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
+		else if(modSpec.IsCodon() && modSpec.fixOmega && !modSpec.gotOmegasFromFile) throw ErrorException("rate het model set to nonsynonymousfixed, but no\n\tparameter values found in %s or %s!", conf->streefname.c_str(), conf->datafname.c_str());
 		}
 	if(conf->modWeight == ZERO_POINT_ZERO)
-		if(modSpec.IsCodon() && modSpec.gotOmegasFromFile == false) 
-			throw(ErrorException("sorry, to turn off model mutations you must provide omega values in a codon model.\nSet modweight to > 0.0 or provide omega values."));
+		if(modSpec.IsCodon() && modSpec.gotOmegasFromFile == false) throw(ErrorException("sorry, to turn off model mutations you must provide omega values in a codon model.\nSet modweight to > 0.0 or provide omega values."));
 
 	assert(indiv[0].treeStruct != NULL);
 	bool foundPolytomies = indiv[0].treeStruct->ArbitrarilyBifurcate();
@@ -1181,12 +1171,9 @@ void Population::SeedPopulationWithStartingTree(int rep){
 	outman.precision(10);
 	outman.UserMessage("Initial ln Likelihood: %.4f", indiv[0].Fitness());
 
-/*
-	indiv[0].treeStruct->ofprefix = conf->ofprefix;
-	indiv[0].treeStruct->MakeAllNodesDirty();
-	indiv[0].treeStruct->sitelikeLevel = 2;
-	indiv[0].treeStruct->Score();
-*/
+#ifdef SCORE_INITIAL_ONLY
+exit(0);
+#endif
 
 #ifdef MAC_FRONTEND
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
@@ -1194,7 +1181,7 @@ void Population::SeedPopulationWithStartingTree(int rep){
 	[pool release];
 #endif
 
-	if(conf->refineStart==true && !conf->scoreOnly){
+	if(conf->refineStart==true){
 		//12/26/07 now only passing the first argument here ("optModel") as false if no model muts are used
 		//if single parameters are fixed that will be checked in the Refine function itself
 		indiv[0].RefineStartingConditions(adap->modWeight != ZERO_POINT_ZERO, adap->branchOptPrecision);
@@ -1540,17 +1527,7 @@ void Population::ReadPopulationCheckpoint(){
 	//if were restarting a bootstrap run we need to change to the bootstrapped data
 	//now, so that scoring below is correct
 	if(conf->bootstrapReps > 0){
-		int s = data->BootstrapReweight(lastBootstrapSeed, conf->resampleProportion);
-		//this should be the case because what was written to the checkpoint for nextBootstrapSeed
-		//should have come out of BootstrapReweight when it was originally called with lastBootstrapSeed
-		assert(s == nextBootstrapSeed);
-/*//for debugging
-			string wtstring;
-			string name = "bootRep";
-			name += currentBootstrapRep;
-			data->MakeWeightSetString(wtstring, "bootstrapRep");
-			outman.UserMessage("bootstrapped weightset is : \n %s", wtstring.c_str());
-*/
+		data->BootstrapReweight(lastBootstrapSeed, conf->resampleProportion);
 		}
 
 	if(gen == UINT_MAX) finishedRep = true;
@@ -1728,27 +1705,6 @@ void Population::Run(){
 					CalcAverageFitness();
 					outman.UserMessage("\t\t\toptimizing flex rates:%.4f -> %.4f", before, bestFitness);
 					}
-				}
-			//if this is an estimated AA rate matrix
-			//and 
-			//	we just reached min prec
-			//	or
-			//	it has been a while since doing so 
-			//		and this is a nice round # gen
-			//		and we're at min prec
-			if((modSpec.IsEstimateAAMatrix() || (modSpec.IsTwoSerineRateMatrix() && !modSpec.fixRelativeRates)) 
-				&& ( reduced && FloatingPointEquals(adap->branchOptPrecision, conf->minOptPrec, 1.0e-8)
-				|| ( (gen - lastPrecisionReduction >= (adap->intervalLength * 50) 
-					&& (gen % (adap->intervalLength * 50) == 0))
-					&& FloatingPointEquals(adap->branchOptPrecision, conf->minOptPrec, 1.0e-8))))
-				{
-				FLOAT_TYPE before = bestFitness;
-				indiv[bestIndiv].treeStruct->OptimizeRelativeNucRates(adap->branchOptPrecision);
-				indiv[bestIndiv].SetDirty();	
-				CalcAverageFitness();
-				if(bestFitness - before > ZERO_POINT_ZERO)
-					outman.UserMessage("\t\t\toptimizing AA rate matrix:%.4f -> %.4f", before, bestFitness);
-				assert(bestFitness - before > 1.0e-4);
 				}
 
 			UpdateFractionDone(2);
@@ -2061,7 +2017,7 @@ void Population::FinalOptimization(){
 		//this is the case of forced freq optimization with codon models.  For everything to work they must be set as both not fixed but empirical
 		if(modSpec.IsCodon() && modSpec.fixStateFreqs == false && modSpec.IsEqualStateFrequencies() == false && modSpec.IsEmpiricalStateFrequencies() == true)
 			optFreqs = true;
-		if((modSpec.fixRelativeRates == false) && ((modSpec.Nst() > 1 && modSpec.IsAminoAcid() == false) || modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix()))
+		if((modSpec.fixRelativeRates == false && modSpec.Nst() > 1 && modSpec.IsAminoAcid() == false) || modSpec.IsEstimateAAMatrix())
 			optRelRates = true;
 #endif
 		}
@@ -2216,7 +2172,7 @@ void Population::FinalOptimization(){
 	else
 		outman.UserMessage("Time used so far = %d hours, %d minutes and %d seconds", hours, min, secs);
 
-	scoreLog << "Score after final optimization: " << indiv[bestIndiv].Fitness() << endl;
+	log << "Score after final optimization: " << indiv[bestIndiv].Fitness() << endl;
 	if(modSpec.IsCodon()){
 		vector<FLOAT_TYPE> sProps;
 		indiv[bestIndiv].treeStruct->mod->CalcSynonymousBranchlengthProportions(sProps);
@@ -2349,7 +2305,7 @@ int Population::EvaluateStoredTrees(bool report){
 				storedTrees[i]->mod->FillModelOrHeaderStringForTable(s, true);
 				outman.UserMessage("rep%2d: %s", i+1, s.c_str());
 
-				if((modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix()) && conf->bootstrapReps == 0){
+				if(modSpec.IsEstimateAAMatrix() && conf->bootstrapReps == 0){
 					string n = conf->ofprefix.c_str();
 					n += ".AArmatrix.dat";
 					ofstream mat;
@@ -2392,22 +2348,7 @@ void Population::Bootstrap(){
 		[pool release];
 #endif
 		if(conf->restart == false){
-			//if this is the first rep
-			if(nextBootstrapSeed == 0)
-				nextBootstrapSeed = rnd.seed();
-			lastBootstrapSeed = nextBootstrapSeed;
-			nextBootstrapSeed = data->BootstrapReweight(lastBootstrapSeed, conf->resampleProportion);
-//for debuggng
-/*			string wtstring;
-			char name[20];
-			sprintf(name, "bootRep%d", currentBootstrapRep);
-			data->MakeWeightSetString(wtstring, name);
-			//outman.UserMessage("bootstrapped weightset is : \n %s", wtstring.c_str());
-			ofstream boot("bootweights.log", ios::app);
-			boot << wtstring.c_str() << "\n";
-			cout << wtstring.c_str() << "\n";
-			boot.close();
-*/			
+			lastBootstrapSeed = data->BootstrapReweight(0, conf->resampleProportion);
 			//outman.UserMessage("Random seed for bootstrap reweighting: %d", lastBootstrapSeed);
 			}
 
@@ -2528,8 +2469,7 @@ void Population::PerformSearch(){
 		TurnOnSignalCatching();
 #endif
 		InitializeOutputStreams();
-		if(!conf->scoreOnly)
-			Run();
+		Run();
 
 		//for most purposes, these two types of termination are premature and treated identically
 		//gen termination is treated as normal termination besides some warnings
@@ -2793,8 +2733,7 @@ void Population::OptimizeInputAndWriteSitelikelihoods(){
 	//find out how many trees we have
 	GarliReader & reader = GarliReader::GetInstance();
 	const NxsTreesBlock *treesblock = reader.GetTreesBlock(reader.GetTaxaBlock(0), reader.GetNumTreesBlocks(reader.GetTaxaBlock(0)) - 1);
-	if(treesblock == NULL)
-		throw ErrorException("You must specify a treefile to use this runmode.");
+	assert(treesblock != NULL);
 	int numTrees = treesblock->GetNumTrees();
 
 	string oname = conf->ofprefix + ".sitelikes.log";
@@ -2808,16 +2747,14 @@ void Population::OptimizeInputAndWriteSitelikelihoods(){
 	//loop over the trees
 	for(int t = 1;t <= numTrees;t++){
 		this->currentSearchRep = t;
-		if(!conf->scoreOnly)
-			outman.UserMessage("Optimizing tree %d ...", t);
+		outman.UserMessage("Optimizing tree %d ...", t);
 
 		SeedPopulationWithStartingTree(t);
 		bestIndiv = 0;
-		if(!conf->scoreOnly)
-			FinalOptimization();
+		FinalOptimization();
 
 		outman.UserMessage("Writing site likelihoods for tree %d ...", t);
-		indiv[0].treeStruct->sitelikeLevel = - (max((int) conf->outputSitelikelihoods, 1));
+		indiv[0].treeStruct->sitelikeLevel = -1;
 		indiv[0].treeStruct->ofprefix = conf->ofprefix;
 		indiv[0].treeStruct->Score();
 		
@@ -2825,12 +2762,8 @@ void Population::OptimizeInputAndWriteSitelikelihoods(){
 		ordered.precision(10);
 		ordered << t << "\t" << -indiv[0].treeStruct->lnL << "\n";
 		ordered.close();
-
-		Individual *repResult = new Individual(&indiv[0]);
-		storedTrees.push_back(repResult);
 		Reset();
 		}
-	EvaluateStoredTrees(true);
 	}
 
 void Population::VariableStartingTreeOptimization(bool reducing){
@@ -3625,7 +3558,11 @@ if(rank > 0) return;
 #endif
 
 	if(gen==1 && ind==NULL || num==1){
-		data->BeginNexusTreesBlock(outf);
+
+		outf << "#nexus" << endl << endl;
+		outf << "begin trees;" << endl;
+		TranslateTable tt( data );
+		outf << tt << endl;
 
 		paupf << "#nexus\n\n";
 		paupf << "begin paup;\n";
@@ -4356,12 +4293,12 @@ int Population::GetSpecifiedModels(FLOAT_TYPE** model_string, int n, int* indiv_
 void Population::OutputLog()	{
 	//log << gen << "\t" << bestFitness << "\t" << stopwatch.SplitTime() << "\t" << adap->branchOptPrecision << endl;
 	if(gen < UINT_MAX) {
-		scoreLog << gen << "\t" << BestFitness() << "\t" << stopwatch.SplitTime() << "\t" << adap->branchOptPrecision;
+		log << gen << "\t" << BestFitness() << "\t" << stopwatch.SplitTime() << "\t" << adap->branchOptPrecision;
 
 		if(conf->reportRunProgress)
-			scoreLog << "\t" << 0.01 * (int) ceil(rep_fraction_done * 100) << "\t" << 0.01 * (int) ceil(tot_fraction_done * 100);
+			log << "\t" << 0.01 * (int) ceil(rep_fraction_done * 100) << "\t" << 0.01 * (int) ceil(tot_fraction_done * 100);
 
-		scoreLog << endl;
+		log << endl;
 #ifdef MAC_FRONTEND
 		NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 		NSDictionary *progressDict = [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:gen], @"generation", [NSNumber numberWithDouble:BestFitness()], @"likelihood", [NSNumber numberWithInt:stopwatch.SplitTime()], @"time", [NSNumber numberWithDouble:adap->branchOptPrecision], @"precision", [NSNumber numberWithInt:lastTopoImprove], @"lastImprovement", nil];
@@ -4371,7 +4308,7 @@ void Population::OutputLog()	{
 	}
 	else{
 		CalcAverageFitness();
-		scoreLog << "Final\t" << BestFitness() << "\t" << stopwatch.SplitTime() << "\t" << adap->branchOptPrecision << endl;
+		log << "Final\t" << BestFitness() << "\t" << stopwatch.SplitTime() << "\t" << adap->branchOptPrecision << endl;
 		}
 	}
 
@@ -6041,8 +5978,6 @@ void Population::SetOutputDetails(){
 				all_best_output = (output_details) (REPLACE | WRITE_REP_TERM | WRITE_PREMATURE | WARN_PREMATURE);
 				treelog_output = (output_details) (conf->outputTreelog ? (REPLACE | WRITE_CONTINUOUS | FINALIZE_REP_TERM | FINALIZE_PREMATURE | WARN_PREMATURE | NEWNAME_PER_REP) : DONT_OUTPUT);
 				}
-			if(conf->scoreOnly)
-				log_output = treelog_output = fate_output = problog_output = swaplog_output = (output_details) DONT_OUTPUT;
 			}
 		//bootstrapping
 		else {
@@ -6188,28 +6123,28 @@ void Population::InitializeOutputStreams(){
 
 	//initialize the log file
 	if(log_output != DONT_OUTPUT){
-		if(scoreLog.is_open() == false){
+		if(log.is_open() == false){
 			char suffix[100];
 			sprintf(suffix, "log0%d.log", rank);
 			DetermineFilename(log_output, temp_buf, suffix);
 
 			if(log_output & APPEND)
-				scoreLog.open(temp_buf, ios::app);
+				log.open(temp_buf, ios::app);
 			else
-				scoreLog.open(temp_buf);
-			scoreLog.precision(10);
+				log.open(temp_buf);
+			log.precision(10);
 			}
-		OutputRepNums(scoreLog);
+		OutputRepNums(log);
 		if(conf->restart == false)
-			scoreLog << "random seed = " << rnd.init_seed() << "\n";
+			log << "random seed = " << rnd.init_seed() << "\n";
 		else{
 			if(finishedRep ==false)
-				scoreLog << "Restarting run at generation " << gen << ", seed " << rnd.init_seed() << ", best lnL " << indiv[bestIndiv].Fitness() << endl;
+				log << "Restarting run at generation " << gen << ", seed " << rnd.init_seed() << ", best lnL " << indiv[bestIndiv].Fitness() << endl;
 			else
-				scoreLog << "Restarting from checkpoint...\n";
+				log << "Restarting from checkpoint...\n";
 			}
 
-		scoreLog << "gen\tbest_like\ttime\toptPrecision\n";
+		log << "gen\tbest_like\ttime\toptPrecision\n";
 		}
 
 	//initialize the treelog
@@ -6423,7 +6358,7 @@ void Population::FinalizeOutputStreams(int type){
 
 	if(prematureTermination == true && type == 0){
 		if(log_output & WARN_PREMATURE)
-			scoreLog << TerminationWarningMessage().c_str() << endl;
+			log << TerminationWarningMessage().c_str() << endl;
 		if(treelog_output & WARN_PREMATURE)
 			if(treeLog.is_open()) 
 				treeLog << TerminationWarningMessage().c_str() << endl;
@@ -6452,13 +6387,13 @@ void Population::FinalizeOutputStreams(int type){
 		}
 
 	//if(((conf->bootstrapReps == 0 || currentBootstrapRep == conf->bootstrapReps) && (currentSearchRep == conf->searchReps)) || userTermination == true){
-	if(scoreLog.is_open()){
-		if(prematureTermination && (log_output & FINALIZE_PREMATURE)) scoreLog.close();
+	if(log.is_open()){
+		if(prematureTermination && (log_output & FINALIZE_PREMATURE)) log.close();
 		else if((!prematureTermination) && (
 			   (repTerm && (log_output & FINALIZE_REP_TERM))
 			|| (repsetTerm && (log_output & FINALIZE_REPSET_TERM))
 			|| (fullTerm && (log_output & FINALIZE_FULL_TERM)))
-			) scoreLog.close();
+			) log.close();
 		}
 
 	if(fate.is_open()){
@@ -7065,7 +7000,7 @@ void Population::OptimizeSiteRates(){
 	vector<float_pair> allRates;
 
 	for(int i=0;i<data->NChar();i++){
-		if(i <= lastConst) rateAndScore = make_pair<FLOAT_TYPE, FLOAT_TYPE>(ZERO_POINT_ZERO, log(indiv[0].mod->StateFreqBitDataFormat((data->GetConstStates())[i])));
+		if(i <= lastConst) rateAndScore = make_pair<FLOAT_TYPE, FLOAT_TYPE>(ZERO_POINT_ZERO, indiv[0].mod->StateFreq((data->GetConstStates())[i]));
 		else{
 			indiv[0].treeStruct->MakeAllNodesDirty();
 			Tree::siteToScore = i;

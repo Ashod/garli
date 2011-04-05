@@ -44,7 +44,6 @@
 #include "errorexception.h"
 #include "model.h"
 #include <sstream>
-#include <cassert>
 
 int GARLI_main( int argc, char* argv[] );
 
@@ -322,7 +321,7 @@ void GarliReader::ClearContent()
 
 	//DJZ this is my function, replacing an old one that appeared in funcs.cpp
 	//simpler now, since it uses NxsMultiFormatReader
-bool GarliReader::ReadData(const char* filename, const ModelSpecification &mSpec){
+bool GarliReader::ReadData(const char* filename, const ModelSpecification &modspec){
 	//first use a few of my crappy functions to try to diagnose the type of file and data
 	//then call the NxsMultiFormatReader functions to process it
 	if (!FileExists(filename))	{
@@ -339,24 +338,24 @@ bool GarliReader::ReadData(const char* filename, const ModelSpecification &mSpec
 		list<FormatPair> formatsToTry;
 		NxsString name;
 		if(FileIsFasta(filename)){
-			if(mSpec.IsAminoAcid()){
+			if(modspec.IsAminoAcid()){
 				formatsToTry.push_back(FormatPair(FASTA_AA_FORMAT, "Fasta amino acid"));
 				}
 			else{
-				if(mSpec.IsRna() == false)
+				if(modSpec.IsRna() == false)
 					formatsToTry.push_back(FormatPair(FASTA_DNA_FORMAT, "Fasta DNA"));
 				formatsToTry.push_back(FormatPair(FASTA_RNA_FORMAT, "Fasta RNA"));
 				}
 			}
 		else{//otherwise assume phylip format
-			if(mSpec.IsAminoAcid()){
+			if(modSpec.IsAminoAcid()){
 				formatsToTry.push_back(FormatPair(RELAXED_PHYLIP_AA_FORMAT, "relaxed Phylip amino acid"));
 				formatsToTry.push_back(FormatPair(INTERLEAVED_RELAXED_PHYLIP_AA_FORMAT, "interleaved relaxed Phylip amino acid"));
 				formatsToTry.push_back(FormatPair(PHYLIP_AA_FORMAT, "strict Phylip amino acid"));
 				formatsToTry.push_back(FormatPair(INTERLEAVED_PHYLIP_AA_FORMAT, "interleaved strict Phylip amino acid"));
 				}
 			else{
-				if(mSpec.IsRna() == false){
+				if(modSpec.IsRna() == false){
 					formatsToTry.push_back(FormatPair(RELAXED_PHYLIP_DNA_FORMAT, "relaxed Phylip DNA"));
 					formatsToTry.push_back(FormatPair(INTERLEAVED_RELAXED_PHYLIP_DNA_FORMAT, "interleaved relaxed Phylip DNA"));
 					formatsToTry.push_back(FormatPair(PHYLIP_DNA_FORMAT, "strict Phylip DNA"));
@@ -376,18 +375,11 @@ bool GarliReader::ReadData(const char* filename, const ModelSpecification &mSpec
 			try{
 				outman.UserMessage("Attempting to read data file %s as\n\t%s format (using NCL) ...", filename, (*formIt).second.c_str());
 				ReadFilepath(filename, (*formIt).first);
-				}
-			catch(NxsException &err){
-				NexusError(err.msg, err.pos, err.line, err.col, false);
-				outman.UserMessage("Problem reading data file as %s format...\n", (*formIt).second.c_str());
-				success = false;
-				}
-			catch(ErrorException &err){
-				//Sometimes NCL raises a NxsException, but then catches it and passes it onto my NexusError,
-				//which throws an ErrorException.  So, need to catch both types of exceptions here
-				outman.UserMessage("Problem reading data file as %s format...\n", (*formIt).second.c_str());
-				success = false;
-				}
+				}catch(NxsException err){
+					NexusError(err.msg, err.pos, err.line, err.col, false);
+					outman.UserMessage("Problem reading data file as %s format...\n", (*formIt).second.c_str());
+					success = false;
+					}
 			if(success) break;
 			}
 		if(success == false)
@@ -399,7 +391,7 @@ bool GarliReader::ReadData(const char* filename, const ModelSpecification &mSpec
 	}
 
 //verifies that we got the right number/type of blocks and returns the Characters block to be used
-const NxsCharactersBlock *GarliReader::CheckBlocksAndGetCorrectCharblock(const ModelSpecification &mSpec) const{
+const NxsCharactersBlock *GarliReader::CheckBlocksAndGetCorrectCharblock(const ModelSpecification &modspec) const{
 	const int numTaxaBlocks = GetNumTaxaBlocks();
 	if(numTaxaBlocks > 1) 
 		throw ErrorException("Either more than one taxa block was found in the data file\n\tor multiple blocks had different taxon sets.");
@@ -416,26 +408,26 @@ const NxsCharactersBlock *GarliReader::CheckBlocksAndGetCorrectCharblock(const M
 	for(int c = 0;c < GetNumCharactersBlocks(taxablock);c++){
 		const NxsCharactersBlock *charblock = GetCharactersBlock(taxablock, c);
 		if((charblock->GetDataType() == NxsCharactersBlock::dna || charblock->GetDataType() == NxsCharactersBlock::nucleotide)
-			&& (mSpec.IsNucleotide() || mSpec.IsCodon() || mSpec.IsCodonAminoAcid())){
+			&& (modSpec.IsNucleotide() || modSpec.IsCodon() || modSpec.IsCodonAminoAcid())){
 			if(correctIndex > -1) throw ErrorException("More than one block containing nucleotide data was found.");
 			else correctIndex = c;
 			}
 		//rna data is not allowed as input for codon or codon-aminoacid analyses
-		else if(charblock->GetDataType() == NxsCharactersBlock::rna && (mSpec.IsNucleotide() || mSpec.IsRna())){
+		else if(charblock->GetDataType() == NxsCharactersBlock::rna && (modSpec.IsNucleotide() || modSpec.IsRna())){
 			if(correctIndex > -1) throw ErrorException("More than one block containing nucleotide data was found.");
 			else correctIndex = c;
 			}
-		else if(charblock->GetDataType() == NxsCharactersBlock::protein && (mSpec.IsAminoAcid() && ! mSpec.IsCodonAminoAcid())){
+		else if(charblock->GetDataType() == NxsCharactersBlock::protein && (modSpec.IsAminoAcid())){
 			if(correctIndex > -1) throw ErrorException("More than one block containing amino acid (protein) data was found.");
 			else correctIndex = c;
 			}
 		}
 	if(correctIndex == -1){
-		if(mSpec.IsNucleotide()) throw ErrorException("A data file was read, but no nucleotide data was found.");
-		else if(mSpec.IsRna()) throw ErrorException("A data file was read, but no RNA data was found.");
-		else if(mSpec.IsAminoAcid()) throw ErrorException("A data file was read, but no amino acid (protein) data was found.");
-		else if(mSpec.IsCodon()) throw ErrorException("DNA data is required as input for codon models.\n\tA data file was read, but none was found.");
-		else if(mSpec.IsCodonAminoAcid()) throw ErrorException("DNA data is required as input for codon translated amino acid models.\n\tA data file was read, but none was found.");
+		if(modSpec.IsNucleotide()) throw ErrorException("A data file was read, but no nucleotide data was found.");
+		else if(modSpec.IsRna()) throw ErrorException("A data file was read, but no RNA data was found.");
+		else if(modSpec.IsAminoAcid()) throw ErrorException("A data file was read, but no amino acid (protein) data was found.");
+		else if(modSpec.IsCodon()) throw ErrorException("DNA data is required as input for codon models.\n\tA data file was read, but none was found.");
+		else if(modSpec.IsCodonAminoAcid()) throw ErrorException("DNA data is required as input for codon translated amino acid models.\n\tA data file was read, but none was found.");
 		}
 	return GetCharactersBlock(taxablock, correctIndex);
 	}
@@ -632,7 +624,7 @@ void GarliReader::HandleExecute(
 			{
 			Execute(ftoken);
 			}
-		catch(NxsException &x)
+		catch(NxsException x)
 			{
 			NexusError(errormsg, x.pos, x.line, x.col);
 			}
@@ -677,7 +669,7 @@ int GarliReader::HandleExecute(const char *filename, bool purge)
 		try{
 			Execute(ftoken);
 			}
-		catch(NxsException &x){
+		catch(NxsException x){
 			//DJZ 3/24/08 this was a bug that I inherited from the NCL example BasicCmdLine
 			//the actual error message in x.msg was never getting printed because the empty
 			//errormsg member of NexusBlock was being passed instead of the error stored in the
@@ -1000,7 +992,7 @@ void GarliReader::HandleNextCommand()
 		assert(garliBlock);
 		garliBlock->Read(token);
 		}
-	catch(NxsException &x) 
+	catch(NxsException x) 
 		{
 		NexusError(errormsg, x.pos, x.line, x.col);
 		}
@@ -1422,16 +1414,4 @@ GarliReader & GarliReader::GetInstance()
 	{
 	static GarliReader gr;
 	return gr;
-	}
-
-//This doesn't really have anything to do with the GarliReader class, it just acts on the passed in charblock
-string GarliReader::GetDefaultIntWeightSet(const NxsCharactersBlock *charblock, vector<int> &charWeights) {
-	const NxsTransformationManager transformer = charblock->GetNxsTransformationManagerRef();
-	string wset = transformer.GetDefaultWeightSetName();
-	if(wset.length() > 0){
-		charWeights = transformer.GetDefaultIntWeights();
-		if(charWeights.size() == 0)
-			throw ErrorException("Default weightSet \"%s\" contains non-integer weights", wset.c_str()); 
-		}
-	return wset;
 	}

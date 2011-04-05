@@ -194,7 +194,6 @@ class GarliReader
 		void ClearContent();
 		bool ReadData(const char* filename, const ModelSpecification &modspec);
 		const NxsCharactersBlock *CheckBlocksAndGetCorrectCharblock(const ModelSpecification &modspec) const;
-		static string GetDefaultIntWeightSet(const NxsCharactersBlock *charblock, vector<int> &wset);
 		};
 
 /*----------------------------------------------------------------------------------------------------------------------

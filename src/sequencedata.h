@@ -48,6 +48,7 @@ protected:
 	virtual int	NumStates(int) const { return 4; }
 
 public:
+	virtual void CreateMatrixFromNCL(const NxsCharactersBlock *) = 0;
 	virtual void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset) = 0;
 	virtual void CalcEmpiricalFreqs() = 0;
 	virtual void GetEmpiricalFreqs(FLOAT_TYPE *f) const{
@@ -71,6 +72,7 @@ inline unsigned char SequenceData::CharToDatum( char ch ){
 		datum = MISSING_DATA;
 	else if( strchr( "rRyYmMkKsSwWhHbBvVdDnN", ch ) ) {
 		datum = MISSING_DATA;
+		dmFlags |= ambigstates;
 	}
 	else
 		THROW_BADSTATE(ch);
@@ -143,6 +145,20 @@ inline char SequenceData::DatumToChar( unsigned char d ) const
        	case 15 : ch='?'; break;
 		default  : assert(0);
 		}
+/*		
+	char ch = 'X';
+
+	if( d == MISSING_DATA )
+		ch = '?';
+	else if( d == 0 )
+		ch = 'A';
+	else if( d == 1 )
+		ch = 'C';
+	else if( d == 2 )
+		ch = 'G';
+	else if( d == 3 )
+		ch = 'T';
+*/
 	return ch;
 }
 
@@ -167,6 +183,7 @@ public:
 
 	unsigned char CharToDatum(char d) ;
 	void CalcEmpiricalFreqs();
+	void CreateMatrixFromNCL(const NxsCharactersBlock *);
 	void CreateMatrixFromNCL(const NxsCharactersBlock *charblock, NxsUnsignedSet &charset);
 	void MakeAmbigStrings();
 	char *GetAmbigString(int i) const{
@@ -182,30 +199,18 @@ public:
 class GeneticCode{
 	//mapping from codon number (ordered AAA, AAC, AAG, AAT, ACA, etc) to 
 	//amino acid number (0-19). Stop codons are 20.
-	//except for two-serine models, when they are 21 and the serine with two codons is state 20
 	int codonTable[64];
 	int map64toNonStops[64];
 	vector<int> stops;
-
 	//this holds the correspondence between the state indeces and actual codons
 	//for display purposes.  Stops are removed and thus any mapIndexToCodonDisplay[index]
 	//gives the codon for that index
 	vector<string> mapIndexToCodonDisplay;
 
 	public:
-	enum{
-		STANDARD= 0,
-		VERTMITO = 1,
-		INVERTMITO = 2,
-		STANDARDTWOSERINE = 3,
-		VERTMITOTWOSERINE = 4,
-		INVERTMITOTWOSERINE = 5
-		}codeName;
-	
 	GeneticCode(){
 		SetStandardCode();
 		}
-
 	void SetStandardCode(){
 		codonTable[ 0 ]= 8;
 		codonTable[ 1 ]= 11;
@@ -345,19 +350,6 @@ class GeneticCode{
 		FillIndexToCodonDisplayMap();
 		}
 		
-	void SetStandardTwoSerineCode(){
-		//because the stops don't change location, I don't think that anything else needs to be changed here
-
-		//the two lone serines become the 20th state
-		codonTable[ 9 ]= 20;  //AGC
-		codonTable[ 11 ]= 20; //AGT
-
-		//the three stop codons become the 21st state
-		codonTable[ 48 ]= 21;
-		codonTable[ 50 ]= 21;
-		codonTable[ 56 ]= 21;
-		}
-
 	void SetVertMitoCode(){
 		SetStandardCode();
 		codonTable[56] = 18; //TGA
@@ -438,22 +430,7 @@ class GeneticCode{
 
 		FillIndexToCodonDisplayMap();
 		}
-
-	//this should be called AFTER SetVertMitoCode()
-	void SetVertMitoTwoSerineCode(){
-		//because the stops don't change location, I don't think that anything else needs to be changed here
-
-		//the two lone serines become the 20th state
-		codonTable[ 9 ]= 20;  //AGC
-		codonTable[ 11 ]= 20; //AGT
-
-		//the four stop codons become the 21st state
-		codonTable[8] = 21;  //AGA
-		codonTable[10] = 21;  //AGG
-		codonTable[ 48 ]= 21;
-		codonTable[ 50 ]= 21;
-		}
-
+		
 	void SetInvertMitoCode(){
 		SetStandardCode();
 		codonTable[56] = 18; //TGA
@@ -533,19 +510,6 @@ class GeneticCode{
 		FillIndexToCodonDisplayMap();
 		}
 
-	//this should be called AFTER SetInvertMitoCode()
-	void SetInvertMitoTwoSerineCode(){
-		//because the stops don't change location, I don't think that anything else needs to be changed here
-
-		//the two lone serines become the 20th state
-		codonTable[ 9 ]= 20;  //AGC
-		codonTable[ 11 ]= 20; //AGT
-
-		//the two stop codons become the 21st state
-		codonTable[ 48 ]= 21;
-		codonTable[ 50 ]= 21;
-		}
-
 	int CodonLookup(int i){
 		assert(i >= 0 && i < 64);
 		return codonTable[i];
@@ -565,7 +529,7 @@ class GeneticCode{
 			for(int s = 0;s < 4;s++){
 				for(int t = 0;t < 4;t++){
 					if(CodonLookup(f * 16 + s * 4 + t) != 20){ 
-						sprintf(cod, "%c%c%c", nucs[f], nucs[s], nucs[t]);
+						sprintf(cod, "%c%c%c\0", nucs[f], nucs[s], nucs[t]);
 						mapIndexToCodonDisplay.push_back(cod);
 						}
 					}
@@ -608,22 +572,18 @@ public:
 
 	CodonData(const NucleotideData *dat, int genCode) : SequenceData(){
 		assert(dat->Dense() == false);
-		if(genCode == GeneticCode::STANDARD){
+		if(genCode == 0){
 			code.SetStandardCode();
 			maxNumStates = 61;
 			}
-		else if(genCode == GeneticCode::VERTMITO){
+		else if(genCode == 1){
 			code.SetVertMitoCode();
 			maxNumStates = 60;
 			}
-		else if(genCode == GeneticCode::INVERTMITO){
+		else{
 			code.SetInvertMitoCode();
 			maxNumStates = 62;
 			}
-		else{
-			throw ErrorException("Sorry, only the standard, vert mito and invert mito codes can be used with codon models");
-			}
-		usePatternManager = dat->GetUsePatternManager();
 		FillCodonMatrixFromDNA(dat);
 		CopyNamesFromOtherMatrix(dat);
 		empType = NOT_EMPIRICAL;
@@ -662,11 +622,6 @@ public:
 	//int ComparePatterns( const int i, const int j ) const;
 	void SetVertMitoCode() {code.SetVertMitoCode();}
 	void SetInvertMitoCode() {code.SetInvertMitoCode();}
-/*	these don't make sense in a standard codon model context since it doesn' change whether anything is an S or NS change
-	void SetStandardTwoSerineCode() {code.SetStandardTwoSerineCode();}
-	void SetVertMitoTwoSerineCode() {code.SetVertMitoTwoSerineCode();}
-	void SetInvertMitoTwoSerineCode() {code.SetInvertMitoTwoSerineCode();}
-*/
 };
 
 
@@ -681,25 +636,9 @@ public:
 	AminoacidData(const NucleotideData *dat, int genCode) : SequenceData(){
 		maxNumStates = 20;
 		GeneticCode c;
-		if(genCode == GeneticCode::STANDARD) c.SetStandardCode();
-		else if(genCode == GeneticCode::VERTMITO) c.SetVertMitoCode();
-		else if(genCode == GeneticCode::INVERTMITO) c.SetInvertMitoCode();
-		else{
-			if(genCode == GeneticCode::STANDARDTWOSERINE){
-				c.SetStandardTwoSerineCode();
-				}
-			else if(genCode == GeneticCode::VERTMITOTWOSERINE){
-				c.SetVertMitoCode();
-				c.SetVertMitoTwoSerineCode();
-				}
-			else if(genCode == GeneticCode::INVERTMITOTWOSERINE){
-				c.SetInvertMitoCode();
-				c.SetInvertMitoTwoSerineCode();
-				}
-			else assert(0);
-			maxNumStates = 21;	
-			}
-		usePatternManager = dat->GetUsePatternManager();
+		if(genCode == 0) c.SetStandardCode();
+		else if(genCode == 1) c.SetVertMitoCode();
+		else c.SetInvertMitoCode();
 		FillAminoacidMatrixFromDNA(dat, &c);
 		CopyNamesFromOtherMatrix(dat);
 		fullyAmbigChar = maxNumStates;
@@ -707,6 +646,7 @@ public:
 	void FillAminoacidMatrixFromDNA(const NucleotideData *dat, GeneticCode *code);
 	void CalcEmpiricalFreqs();
 	unsigned char CharToDatum(char d) ;
+	void CreateMatrixFromNCL(const NxsCharactersBlock *);
 	void CreateMatrixFromNCL(const NxsCharactersBlock *, NxsUnsignedSet &charset);
 	};
 

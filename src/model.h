@@ -357,7 +357,6 @@ public:
 		MTMAMMAT = 9,
 		MTREVMAT = 10,
 		ESTIMATEDAAMAT = 11,
-		TWOSERINEMAT = 12,
 		USERSPECIFIEDMAT = 20
 		}rateMatrix;
 	
@@ -371,10 +370,7 @@ public:
 	enum{
 		STANDARD = 0,
 		VERTMITO = 1,
-		INVERTMITO = 2,
-		STANDARDTWOSERINE = 3,
-		VERTMITOTWOSERINE = 4,
-		INVERTMITOTWOSERINE = 5
+		INVERTMITO = 2
 		}geneticCode;	
 
 	ModelSpecification(){
@@ -594,12 +590,6 @@ public:
 		fixRelativeRates=false;
 		}
 
-	void SetTwoSerineRateMatrix(){
-		rateMatrix = TWOSERINEMAT;
-		nstates = 21;
-		fixRelativeRates=false;
-		}
-
 	void SetJonesAAFreqs(){
 		stateFrequencies = JONES;
 		fixStateFreqs=true;
@@ -660,7 +650,6 @@ public:
 	bool IsInvertMitoCode() {return (geneticCode == INVERTMITO);}
 	bool IsPoissonAAMatrix() {return (rateMatrix == POISSON);}
 	bool IsUserSpecifiedRateMatrix(){return rateMatrix == USERSPECIFIEDMAT;}
-	bool IsTwoSerineRateMatrix(){return rateMatrix == TWOSERINEMAT;}
 	bool IsArbitraryRateMatrix() {return rateMatrix == ARBITRARY;}
 	const string GetArbitraryRateMatrixString(){return arbitraryRateMatrixString;}
 
@@ -680,7 +669,7 @@ public:
 		else if(_stricmp(str, "estimate") == 0){
 			if(datatype == CODON) 
 				throw ErrorException("Sorry, ML estimation of equilibrium frequencies is not available under\ncodon models.  Try statefrequencies = empirical");
-			//else if(datatype == AMINOACID || datatype == CODONAMINOACID) outman.UserMessage("\nWARNING: to obtain good ML estimates of equilibrium aminoacid frequencies you\n\tmay need to run for a very long time or increase the modweight.\n\tConsider statefrequencies = empirical instead.\n");
+			else if(datatype == AMINOACID || datatype == CODONAMINOACID) outman.UserMessage("\nWARNING: to obtain good ML estimates of equilibrium aminoacid frequencies you\n\tmay need to run for a very long time or increase the modweight.\n\tConsider statefrequencies = empirical instead.\n");
 			SetEstimateStateFreqs();
 			}
 		else if(_stricmp(str, "estimateF") == 0){
@@ -714,15 +703,6 @@ public:
 				SetEstimatedAAMatrix();
 				}
 			else if(_stricmp(str, "fixed") == 0) SetUserSpecifiedRateMatrix();
-			else if(_stricmp(str, "twoserine") == 0 || _stricmp(str, "twoserinefixed") == 0){
-				if(datatype != CODONAMINOACID)
-					throw(ErrorException("Sorry, codon input data (with the codon-aminoacid datatype) are currently required for the Two-Serine model"));
-				if(stateFrequencies != EMPIRICAL && stateFrequencies != ESTIMATE && stateFrequencies != USERSPECIFIED)
-					throw(ErrorException("Sorry, empirical, estimated or fixed must be used as the statefrequencies setting for the Two-Serine model"));
-				SetTwoSerineRateMatrix();
-				if(_stricmp(str, "twoserinefixed") == 0)
-					fixRelativeRates = true;
-				}
 			else throw(ErrorException("Sorry, %s is not a valid aminoacid rate matrix. \n\t(Options are: dayhoff, jones, poisson, wag, mtmam, mtrev, estimate, fixed)", str));
 			}
 		else{
@@ -805,9 +785,6 @@ public:
 				geneticCode = INVERTMITO;
 				if(datatype == CODON) nstates = 62;
 				}
-			else if(_stricmp(str, "standardtwoserine") == 0) geneticCode = STANDARDTWOSERINE;
-			else if(_stricmp(str, "vertmitotwoserine") == 0) geneticCode = INVERTMITOTWOSERINE;
-			else if(_stricmp(str, "invertmitotwoserine") == 0) geneticCode = VERTMITOTWOSERINE;
 			else throw(ErrorException("Unknown genetic code: %s\n\t(options are: standard, vertmito, invertmito)", str));
 			}
 		}
@@ -951,18 +928,6 @@ class Model{
 	
 	//Accessor functions
 	FLOAT_TYPE StateFreq(int p) const{ return *stateFreqs[p];}
-	FLOAT_TYPE StateFreqBitDataFormat(int p) const{
-		assert(! (p & (p-1)));
-		int index = 0;
-		switch(p){
-			case 1 : index = 0;break;
-			case 2 : index = 1;break;
-			case 4 : index = 2;break;
-			case 8 : index = 3;break;
-			default: assert(0);
-			}
-		return *stateFreqs[index];
-		}
 	FLOAT_TYPE TRatio() const;
 	FLOAT_TYPE Rates(int r) const { return *relNucRates[r];}
 	int NumRelRates() const {return relNucRates.size();}
@@ -1023,7 +988,7 @@ class Model{
 			//if we're constraining the matrix by summing the rates AND this is an AA model, do that
 			//otherwise do the normal fix at 1.0 constraint
 		if(modSpec.IsAminoAcid())
-			assert(modSpec.IsEstimateAAMatrix() || modSpec.IsUserSpecifiedRateMatrix() || modSpec.IsTwoSerineRateMatrix());
+			assert(modSpec.IsEstimateAAMatrix() || modSpec.IsUserSpecifiedRateMatrix());
 	#ifdef SUM_AA_REL_RATES
 		if(modSpec.IsAminoAcid()){
 			for(int i=0;i<relNucRates.size();i++)

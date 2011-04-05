@@ -1783,7 +1783,7 @@ if(nd->nodeNum == 8){
 														opt << "IgnoreNRUp\t";
 														#endif
 							}
-
+//DEBUG
 	//					else if(iter == 30){
 						else if(((iter - 20) > 0) && ((iter - 20) % 10 == 0)){
 							//another annoying special case (only for codon models I think)
@@ -1997,20 +1997,16 @@ if(nd->nodeNum == 8){
 
 			if(iter > 100){
 				outman.DebugMessage("100 passes in NR!");
-
-				Score(nd->anc->nodeNum);
 				//now going to allow escape after 100 passes in all SP runs, and in DP codon runs.  This should only happen due to numerical problems, and these
 				//are situations where numerical problems are known to occur.
-				//Update - when blen MLE is very large I've found cases where there are true multiple blen optima for a single blen trace.  So, allowing an
-				//exemption in that case if the lnL loss was minor.
 #ifndef SINGLE_PRECISION_FLOATS				
-				if(modSpec.IsCodon() == false && (nd->dlen < 0.5 && v_onEntry < 0.5) && (initialL > lnL + 0.1)) 
+				if(modSpec.IsCodon() == false)
 					throw(ErrorException("Problem with branchlength optimization.  Please report this error to garli.support@gmail.com.\nDetails: nd=%d init=%f cur=%f prev=%d d1=%f d2=%f neg=%d", nd->nodeNum, v_onEntry, v_prev, nd->dlen, d1, d2, negProposalNum));
-				else if(nd->dlen < 0.5 && v_onEntry < 0.5)
+				else 
 					outman.UserMessage("Notice: possible problem with branchlength optimization.\nIf you see this message frequently, please report it to garli.support@gmail.com.\nIf you only see it ignore it.\n\tDetails: nd=%d init=%f cur=%f prev=%d d1=%f d2=%f neg=%d", nd->nodeNum, v_onEntry, v_prev, nd->dlen, d1, d2, negProposalNum);
-				else
-					outman.DebugMessage("NOTE 100 passes in NR, long blens involved. \nDetails: nd=%d init=%f cur=%f prev=%d d1=%f d2=%f neg=%d", nd->nodeNum, v_onEntry, v_prev, nd->dlen, d1, d2, negProposalNum);
 #endif
+
+				Score(nd->anc->nodeNum);
 
 				outman.DebugMessage(">>>>%.6f  %.6f <<<<", initialL, lnL);
 				if(lnL > initialL){
@@ -2523,7 +2519,7 @@ void Tree::GetDerivsPartialTerminal(const CondLikeArray *partialCLA, const FLOAT
 	vector<double> siteLikes(nchar);
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE siteL;
@@ -2687,7 +2683,7 @@ void Tree::GetDerivsPartialTerminalNState(const CondLikeArray *partialCLA, const
 	vector<double> siteLikes(nchar);
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL=ZERO_POINT_ZERO, grandSumL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
@@ -2917,7 +2913,7 @@ void Tree::GetDerivsPartialTerminalNStateRateHet(const CondLikeArray *partialCLA
 	vector<double> siteLikes(nchar);
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL=ZERO_POINT_ZERO, grandSumL=ZERO_POINT_ZERO, unscaledlnL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
@@ -3083,8 +3079,8 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 #endif
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE siteL;
@@ -3181,7 +3177,7 @@ void Tree::GetDerivsPartialInternal(const CondLikeArray *partialCLA, const CondL
 	d2Tot = tot2;
 	lnL = totL;
 #ifdef OPT_DEBUG
-//	opt << "GetDerivsPartialInternal" << endl;
+	opt << "GetDerivsPartialInternal" << endl;
 #endif
 
 #ifdef CUDA_GPU
@@ -3231,8 +3227,8 @@ void Tree::GetDerivsPartialInternalNStateRateHet(const CondLikeArray *partialCLA
 #endif
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL = ZERO_POINT_ZERO, grandSumL = ZERO_POINT_ZERO, unscaledlnL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
@@ -3360,8 +3356,8 @@ void Tree::GetDerivsPartialInternalNState(const CondLikeArray *partialCLA, const
 #endif
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE tot1=ZERO_POINT_ZERO, tot2=ZERO_POINT_ZERO, totL = ZERO_POINT_ZERO, grandSumL = ZERO_POINT_ZERO, unscaledlnL=ZERO_POINT_ZERO;//can't use d1Tot and d2Tot in OMP reduction because they are references
@@ -3460,8 +3456,8 @@ void Tree::GetDerivsPartialInternalEQUIV(const CondLikeArray *partialCLA, const 
 	const int nRateCats=mod->NRateCats();
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE siteL;

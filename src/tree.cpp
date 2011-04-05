@@ -105,6 +105,11 @@ FLOAT_TYPE Tree::expectedPrecision;
 FLOAT_TYPE Tree::uniqueSwapPrecalc[500];
 FLOAT_TYPE Tree::distanceSwapPrecalc[1000];
 
+//DEBUG
+//FLOAT_TYPE Tree::rescalePrecalcThresh[30];
+//FLOAT_TYPE Tree::rescalePrecalcMult[30];
+//int Tree::rescalePrecalcIncr[30];
+
 FLOAT_TYPE Tree::rescalePrecalcThresh[RESCALE_ARRAY_LENGTH];
 FLOAT_TYPE Tree::rescalePrecalcMult[RESCALE_ARRAY_LENGTH];
 int Tree::rescalePrecalcIncr[RESCALE_ARRAY_LENGTH];
@@ -341,8 +346,6 @@ Tree::Tree(const char* s, bool numericalTaxa, bool allowPolytomies /*=false*/, b
 			//here we're about to add a node of some sort
 			this->numBranchesAdded++;
 			if(*(s+1)=='('){//add an internal node
-				if(current >= numNodesTotal)
-					throw ErrorException("Problem reading tree description.  Extra taxa?");
 				temp=temp->AddDes(allNodes[current++]);
 				numNodesAdded++;
 				s++;
@@ -3136,8 +3139,8 @@ void Tree::RescaleRateHet(CondLikeArray *destCLA){
 
 		//check if any clas are getting close to underflow
 #ifdef UNIX
-		posix_madvise(destination, sizeof(FLOAT_TYPE)*4*nRateCats*nsites, POSIX_MADV_SEQUENTIAL);
-		posix_madvise(underflow_mult, sizeof(int)*nsites, POSIX_MADV_SEQUENTIAL);
+		madvise(destination, sizeof(FLOAT_TYPE)*4*nRateCats*nsites, MADV_SEQUENTIAL);
+		madvise(underflow_mult, sizeof(int)*nsites, MADV_SEQUENTIAL);
 #endif
 		FLOAT_TYPE large1 = 0.0, large2 = 0.0;
 		for(int i=0;i<nsites;i++){
@@ -3268,8 +3271,8 @@ void Tree::RescaleRateHetNState(CondLikeArray *destCLA){
 
 	//check if any clas are getting close to underflow
 #ifdef UNIX
-	posix_madvise(destination, sizeof(FLOAT_TYPE)*nstates*nRateCats*nsites, POSIX_MADV_SEQUENTIAL);
-	posix_madvise(underflow_mult, sizeof(int)*nsites, POSIX_MADV_SEQUENTIAL);
+	madvise(destination, sizeof(FLOAT_TYPE)*nstates*nRateCats*nsites, MADV_SEQUENTIAL);
+	madvise(underflow_mult, sizeof(int)*nsites, MADV_SEQUENTIAL);
 #endif
 	FLOAT_TYPE large1 = 0.0;
 	for(int i=0;i<nsites;i++){
@@ -4891,13 +4894,13 @@ void Tree::OutputSiteLikelihoods(vector<double> &likes, const int *under1, const
 			}
 		}
 	if(sitelikeLevel > 1){
-		packed << "packedIndex\ttruelnL\tunder1\tunder2\tpatCount" << endl;
+		packed << "packedIndex\ttruelnL\tunder1\tunder2" << endl;
 		for(int c = 0;c < data->NChar();c++){
 			packed << c << "\t" << likes[c] << "\t" << under1[c];
 			if(under2 != NULL)
-				packed << "\t" << under2[c] << "\t" << data->Count(c) << endl;
+				packed << "\t" << under2[c] << endl;
 			else
-				packed << "\t-" << "\t" << data->Count(c) << endl;
+				packed << "\t-" << endl;
 			}
 		}
 	//sitelike output is non-persistent, so clear it out here
@@ -4954,7 +4957,7 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 	const FLOAT_TYPE prI=mod->PropInvar();
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE siteL, totallnL=ZERO_POINT_ZERO, unscaledlnL, grandSumlnL=ZERO_POINT_ZERO;
@@ -5002,12 +5005,11 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 					assert(0);
 					}
 				siteL *= rateProb[0];//multiply by (1-pinv)
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
+						siteL += prI*freqs[conStates[i]];
 					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult[i]);
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult[i]);
 					}
 				unscaledlnL = (log(siteL) - underflow_mult[i]);
 				assert(siteL > ZERO_POINT_ZERO);//this should be positive
@@ -5079,12 +5081,11 @@ FLOAT_TYPE Tree::GetScorePartialTerminalNState(const CondLikeArray *partialCLA, 
 						}
 					}
 
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
+						siteL += prI*freqs[conStates[i]];
 					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult[i]);
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult[i]);
 					}
 
 				unscaledlnL = (log(siteL) - underflow_mult[i]);
@@ -5143,7 +5144,7 @@ FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA,
 	for(int i=0;i<4;i++) freqs[i]=mod->StateFreq(i);
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 #ifdef ALLOW_SINGLE_SITE
@@ -5196,13 +5197,12 @@ FLOAT_TYPE Tree::GetScorePartialTerminalRateHet(const CondLikeArray *partialCLA,
 					}
 				partial+=4*nRateCats;
 				}
-			if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-				int actualSite = (siteToScore < 0 ? i : siteToScore );
+			if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 				FLOAT_TYPE btot=0.0;
-				if(conBases[actualSite]&1) btot+=freqs[0];
-				if(conBases[actualSite]&2) btot+=freqs[1];
-				if(conBases[actualSite]&4) btot+=freqs[2];
-				if(conBases[actualSite]&8) btot+=freqs[3];
+				if(conBases[i]&1) btot+=freqs[0];
+				if(conBases[i]&2) btot+=freqs[1];
+				if(conBases[i]&4) btot+=freqs[2];
+				if(conBases[i]&8) btot+=freqs[3];
 				if(underflow_mult[i]==0)
 					siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]) + prI*btot);
 				else
@@ -5273,8 +5273,8 @@ FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA,
 
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	//DEBUG
@@ -5300,13 +5300,12 @@ FLOAT_TYPE Tree::GetScorePartialInternalRateHet(const CondLikeArray *partialCLA,
 				partial+=4;
 				CL1+=4;
 				}
-			if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-				int actualSite = (siteToScore < 0 ? i : siteToScore );
+			if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 				FLOAT_TYPE btot=ZERO_POINT_ZERO;
-				if(conBases[actualSite]&1) btot+=freqs[0];
-				if(conBases[actualSite]&2) btot+=freqs[1];
-				if(conBases[actualSite]&4) btot+=freqs[2];
-				if(conBases[actualSite]&8) btot+=freqs[3];
+				if(conBases[i]&1) btot+=freqs[0];
+				if(conBases[i]&2) btot+=freqs[1];
+				if(conBases[i]&4) btot+=freqs[2];
+				if(conBases[i]&8) btot+=freqs[3];
 				if(underflow_mult1[i] + underflow_mult2[i] == 0)
 					siteL  = ((La*freqs[0]+Lc*freqs[1]+Lg*freqs[2]+Lt*freqs[3]) + prI*btot);
 				else
@@ -5369,8 +5368,8 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 	const int *conStates=data->GetConstStates();
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE totallnL=ZERO_POINT_ZERO, siteL, unscaledlnL, grandSumlnL=ZERO_POINT_ZERO;
@@ -5408,12 +5407,11 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 					siteL += temp * partial[from] * freqs[from];
 					}
 				siteL *= rateProb[0]; //multiply by (1-pinv)
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult1[i] + underflow_mult2[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
+						siteL += prI*freqs[conStates[i]];
 					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
 					}
 				CL1 += nstates;
 				partial += nstates;
@@ -5480,12 +5478,12 @@ FLOAT_TYPE Tree::GetScorePartialInternalNState(const CondLikeArray *partialCLA, 
 					partial += nstates;
 					CL1 += nstates;
 					}
-				if(mod->NoPinvInModel() == false && ((siteToScore < 0 ? i : siteToScore ) <= lastConst)){
-					int actualSite = (siteToScore < 0 ? i : siteToScore );
+
+				if((mod->NoPinvInModel() == false) && (i<=lastConst)){
 					if(underflow_mult1[i] + underflow_mult2[i] == 0)
-						siteL += prI*freqs[conStates[actualSite]];
+						siteL += prI*freqs[conStates[i]];
 					else
-						siteL += prI*freqs[conStates[actualSite]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
+						siteL += prI*freqs[conStates[i]]*exp((FLOAT_TYPE)underflow_mult1[i]+(FLOAT_TYPE)underflow_mult2[i]);
 					}
 				unscaledlnL = (log(siteL) - underflow_mult1[i] - underflow_mult2[i]);
 				assert(siteL > ZERO_POINT_ZERO);//this should be positive
@@ -5542,8 +5540,8 @@ void Tree::GetStatewiseUnscaledPosteriorsPartialInternalNState(CondLikeArray *de
 	const int *conStates=data->GetConstStates();
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE *freqs = new FLOAT_TYPE[nstates];
@@ -5621,7 +5619,7 @@ void Tree::GetStatewiseUnscaledPosteriorsPartialTerminalRateHet(CondLikeArray *d
 		freqs[i]=mod->StateFreq(i);
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	//note that we don't need to zero the whole thing
@@ -5700,7 +5698,7 @@ void Tree::GetStatewiseUnscaledPosteriorsPartialTerminalNState(CondLikeArray *de
 	const FLOAT_TYPE prI=mod->PropInvar();
 
 #ifdef UNIX
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	FLOAT_TYPE siteL, totallnL=ZERO_POINT_ZERO, unscaledlnL, grandSumlnL=ZERO_POINT_ZERO;
@@ -6639,9 +6637,9 @@ void Tree::CalcFullCLAInternalInternalEQUIV(CondLikeArray *destCLA, const CondLi
 	assert(nRateCats == 1);
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)LCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)RCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)LCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)RCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	for(int i=0;i<nchar;i++) {
@@ -6700,9 +6698,9 @@ void Tree::CalcFullCLAInternalInternal(CondLikeArray *destCLA, const CondLikeArr
 #endif
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)LCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)RCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)LCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)RCL, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	if(nRateCats == 4){//the unrolled 4 rate version
@@ -6883,9 +6881,9 @@ void Tree::CalcFullCLAInternalInternalNState(CondLikeArray *destCLA, const CondL
 #endif
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)LCL, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)RCL, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)LCL, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)RCL, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 #ifdef OMP_INTINTCLA_NSTATE
@@ -6949,7 +6947,7 @@ void Tree::CalcFullCLATerminalTerminal(CondLikeArray *destCLA, const FLOAT_TYPE 
 	const int *counts = data->GetCounts();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 #ifdef ALLOW_SINGLE_SITE
@@ -7117,7 +7115,7 @@ void Tree::CalcFullCLATerminalTerminalNState(CondLikeArray *destCLA, const FLOAT
 	const int *counts = data->GetCounts();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 	if(siteToScore > 0){
 		Ldata += siteToScore;
@@ -7198,8 +7196,8 @@ void Tree::CalcFullCLAInternalTerminal(CondLikeArray *destCLA, const CondLikeArr
 	const int *counts = data->GetCounts();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 #ifdef ALLOW_SINGLE_SITE
@@ -7402,8 +7400,8 @@ void Tree::CalcFullCLAInternalTerminalNState(CondLikeArray *destCLA, const CondL
 	const int *counts = data->GetCounts();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	if(siteToScore > 0) data2 += siteToScore;
@@ -7430,7 +7428,7 @@ void Tree::CalcFullCLAInternalTerminalNState(CondLikeArray *destCLA, const CondL
 						}
 					dest[from] = (*data2 < nstates ? d * pr2[rate*nstates*nstates + (*data2)+from*nstates] : d);
 					}
-				assert(dest[nstates - 1] < 1e10);
+				assert(dest[19] < 1e10);
 				dest += nstates;
 				CL1 += nstates;
 				}
@@ -7459,9 +7457,9 @@ void Tree::CalcFullCLAPartialInternalRateHet(CondLikeArray *destCLA, const CondL
 	const int nRateCats = mod->NRateCats();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise(partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)CL1, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise(partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	if(nRateCats==4){
@@ -7520,8 +7518,8 @@ void Tree::CalcFullCLAPartialInternalNState(CondLikeArray *destCLA, const CondLi
 	const int nchar = data->NChar();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void *)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void *)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	for(int i=0;i<nchar;i++) {
@@ -7552,8 +7550,8 @@ void Tree::CalcFullCLAPartialTerminalRateHet(CondLikeArray *destCLA, const CondL
 	const int nRateCats = mod->NRateCats();
 
 #ifdef UNIX
-	posix_madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise(dest, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*4*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	for(int i=0;i<nchar;i++){
@@ -7612,8 +7610,8 @@ void Tree::CalcFullCLAPartialTerminalNState(CondLikeArray *destCLA, const CondLi
 	const int nchar = data->NChar();
 
 #ifdef UNIX
-	posix_madvise((void*)dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
-	posix_madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), POSIX_MADV_SEQUENTIAL);
+	madvise((void*)dest, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
+	madvise((void*)partial, nchar*nstates*nRateCats*sizeof(FLOAT_TYPE), MADV_SEQUENTIAL);
 #endif
 
 	for(int i=0;i<nchar;i++){
@@ -7660,36 +7658,14 @@ pair<FLOAT_TYPE, FLOAT_TYPE> Tree::OptimizeSingleSiteTreeScale(FLOAT_TYPE optPre
 #ifdef DEBUG_SCALE_OPT
 	ofstream deb("scaleTrace.log");
 	deb.precision(20);
-	ofstream trees("trees.log");
-	trees.precision(10);
-	ofstream scls("scales.log");
-	scls.precision(10);
-
-	trees << "#NEXUS\nbegin trees;" << endl;
-	trees.precision(5);
-	int sit = siteToScore;
-	siteToScore = -1;
-	ofprefix="poo";
-	for(int s=0;s<75;s++){
-		FLOAT_TYPE scale= 1.0e-8 * pow(1.5, s);
-		scls << s << "\t" << scale << endl; 
+	for(int s=0;s<50;s++){
+		FLOAT_TYPE scale=0.5 + s*.025;
 		ScaleWholeTree(scale);
-		if(s == 0)
-			sitelikeLevel = 1;
-		else
-			sitelikeLevel = -1;
 		Score();
 		deb << scale << "\t" << lnL << endl;
-		string str;
-		root->MakeNewick(str, data, false, true, true);
-		trees << "tree t" << s << " = [scale = " << scale << " " << lnL / siteCount << "]" << str.c_str() << ";\n";
 		ScaleWholeTree(ONE_POINT_ZERO/scale);
 		}
-	siteToScore = sit;
 	deb.close();
-	trees << "end;" << endl;
-	trees.close();
-	scls.close();
 #endif
 
 	if(FloatingPointEquals(lnL, ZERO_POINT_ZERO, max(1.0e-8, GARLI_FP_EPS * 2.0))){

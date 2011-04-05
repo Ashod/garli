@@ -714,8 +714,8 @@ void Model::CalcSynonymousBranchlengthProportions(vector<FLOAT_TYPE> &results){
 
 void Model::UpdateQMatAminoAcid(){
 
-	for(int from=0;from<nstates;from++)
-		for(int to=0;to<nstates;to++)
+	for(int from=0;from<20;from++)
+		for(int to=0;to<20;to++)
 			qmat[0][from][to] = *stateFreqs[to];
 
 	if(modSpec.IsJonesAAMatrix()) MultiplyByJonesAAMatrix();
@@ -723,18 +723,18 @@ void Model::UpdateQMatAminoAcid(){
 	else if(modSpec.IsWAGAAMatrix()) MultiplyByWAGAAMatrix();
 	else if(modSpec.IsMtMamAAMatrix()) MultiplyByMtMamAAMatrix();
 	else if(modSpec.IsMtRevAAMatrix()) MultiplyByMtRevAAMatrix();
-	else if(modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix() || modSpec.IsUserSpecifiedRateMatrix()){
+	else if(modSpec.IsEstimateAAMatrix() || modSpec.IsUserSpecifiedRateMatrix()){
 		vector<FLOAT_TYPE *>::iterator r = relNucRates.begin();
-		for(int from=0;from<nstates - 1;from++){
-			for(int to=from+1;to<nstates;to++){
+		for(int from=0;from<19;from++){
+			for(int to=from+1;to<20;to++){
 				qmat[0][from][to] *= **r;
 				r++;
 				}
 			}
 		assert(r == relNucRates.end());
 		r = relNucRates.begin();
-		for(int to=0;to<nstates - 1;to++){
-			for(int from=to+1;from<nstates;from++){
+		for(int to=0;to<19;to++){
+			for(int from=to+1;from<20;from++){
 				qmat[0][from][to] *= **r;
 				r++;
 				}
@@ -746,10 +746,10 @@ void Model::UpdateQMatAminoAcid(){
 	double sum, weightedDiagSum = 0.0;
 	blen_multiplier[0] = 0.0;
 
-	for(int from=0;from<nstates;from++){
+	for(int from=0;from<20;from++){
 		//qmat[0][from][from] = 0.0;
 		sum = 0.0;
-		for(int to=0;to<nstates;to++){
+		for(int to=0;to<20;to++){
 			if(from != to) sum += qmat[0][from][to];
 			}
 		qmat[0][from][from] = -sum;
@@ -1145,15 +1145,15 @@ void Model::AltCalcPmat(FLOAT_TYPE dlen, MODEL_FLOAT ***&pmat){
 			}
 		}
 
-	if(NStates() == 20 || NStates() == 21){
+	if(NStates() == 20){
 		for(int rate=0;rate<NRateCats();rate++){
 			int model=0;
-			const unsigned rateOffset = nstates*rate;
-			for (int i = 0; i < nstates; i++){
-				for (int j = 0; j < nstates; j++){
+			const unsigned rateOffset = 20*rate;
+			for (int i = 0; i < 20; i++){
+				for (int j = 0; j < 20; j++){
 					MODEL_FLOAT sum_p=ZERO_POINT_ZERO;
-					for (int k = 0; k < nstates; k++){ 
-						const MODEL_FLOAT x = c_ijk[0][model*nstates*nstates*nstates + i*nstates*nstates + j*nstates +k];
+					for (int k = 0; k < 20; k++){ 
+						const MODEL_FLOAT x = c_ijk[0][model*20*20*20 + i*20*20 + j*20 +k];
 						sum_p   += x*EigValexp[k+rateOffset];
 						}
 					pmat[rate][i][j] = (sum_p > ZERO_POINT_ZERO ? sum_p : ZERO_POINT_ZERO);
@@ -1223,14 +1223,6 @@ void Model::AltCalcPmat(FLOAT_TYPE dlen, MODEL_FLOAT ***&pmat){
 				}
 			}
 		}
-	/*wrong	*/
-//	double inmat[16] = {0.9070614,	0.02927732,	0.02870608,	0.0349794, 0.03213807,	0.90418679,	0.02868981,	0.03497981, 0.03213807,	0.02926432,	0.90361226, 0.03497981, 0.03213831,	0.02927236,	0.02868767,	0.90990174};
-	/*right*/
-	//double inmat[16] = {0.9070611, 0.0292719, 0.02868779, 0.03497917, 0.03213868, 0.90419436, 0.02868777, 0.03497917, 0.03213868, 0.0292719, 0.90361023, 0.03497917, 0.03213868, 0.02927192, 0.02868777, 0.90990162};
-/*	for(int i =0;i < 16;i++){
-		pmat[0][0][i] = inmat[i];
-		}
-*/
 	}
 
 void Model::SetDefaultModelParameters(const SequenceData *data){
@@ -1372,23 +1364,7 @@ void Model::CopyModel(const Model *from){
 			*omegaProbs[i]=*(from->omegaProbs[i]);
 		}
 
-	//CANNOT memcpy stateFreqs and relNucRates because they are vectors of pointers, not of doubles
-
-	//Arg, had twoserine bug here.  If AA, rel rates need to be copied:
-	//1) If IsEstimateAAMatrix - matrix needs to be propagated as it changes
-	//2) If is estimated two-serine model (i.e., modSpec.IsTwoSerineRateMatrix() && !modSpec.fixRelativeRates) - as above
-
-	//THE FOLLOWING TWO ONE-TIME CASES COULD BE REMOVED FROM HERE AND ONLY CALLED DURING INITIAL CLONING, AND I LOOKED INTO
-	//THIS, BUT IT GETS NASTY AND POTENTIALLY BUGGY TO TRY IT.  THESE ARE RARE USE CASES, SO I WON'T WORRY ABOUT THE OVERHEAD,
-	//WHICH MAY BE LARGE
-	//3) If IsUserSpecifiedRateMatrix (=fixed) - Doesn't need to be copied during run since it won't be changing, but DOES need to be copied 
-										//when the initial tree is cloned into the pop, to overwrite the default parameter values
-	//This is what was missing in two serine bug:
-	//4) If is a fixed two-serine matrix (i.e., modSpec.IsTwoSerineRateMatrix() && modSpec.fixRelativeRates) - for same reason as previous,
-										//to overwrite default values
-
-	//if(modSpec.IsAminoAcid() == false || modSpec.IsEstimateAAMatrix() || (modSpec.IsTwoSerineRateMatrix() && !modSpec.fixRelativeRates) || (modSpec.IsAminoAcid() && modSpec.IsUserSpecifiedRateMatrix()))
-	if(modSpec.IsAminoAcid() == false || modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix() || (modSpec.IsAminoAcid() && modSpec.IsUserSpecifiedRateMatrix()))
+	if(modSpec.IsAminoAcid() == false || modSpec.IsEstimateAAMatrix() || (modSpec.IsAminoAcid() && modSpec.IsUserSpecifiedRateMatrix()))
 		for(int i=0;i<relNucRates.size();i++)
 			*relNucRates[i]=*(from->relNucRates[i]);
 	
@@ -1949,19 +1925,18 @@ void Model::FillModelOrHeaderStringForTable(string &s, bool model) const{
 				}
 			}
 		}
-	if(modSpec.IsNucleotide() || modSpec.IsCodon() || modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix()){
+	if(modSpec.IsNucleotide() || modSpec.IsCodon() || modSpec.IsEstimateAAMatrix()){
 		if(model){
 			//sprintf(cStr, " %5.2f %5.2f %5.2f %5.2f %5.2f %5.2f", Rates(0), Rates(1), Rates(2), Rates(3), Rates(4), 1.0);
 			for(int st = 0;st < relNucRates.size();st++){
-				sprintf(cStr," %6.5g", Rates(st));
+				sprintf(cStr," %6.3f", Rates(st));
 				s += cStr;
 				}
 			}
 		else{
 			string states;
-			//Z is second serine type
 			if(modSpec.IsAminoAcid())
-				states="ACDEFGHIKLMNPQRSTVWYZ";
+				states="ACDEFGHIKLMNPQRSTVWY";
 			else
 				states="ACGT";
 			char rStr[50];
@@ -2026,9 +2001,8 @@ void Model::FillModelOrHeaderStringForTable(string &s, bool model) const{
 			else{
 				char pStr[50];
 				string states;
-				//Z is extra serine, and won't be shown in normal models because there are only 20 AA's
 				if(modSpec.IsAminoAcid())
-					states="ACDEFGHIKLMNPQRSTVWYZ";
+					states="ACDEFGHIKLMNPQRSTVWY";
 				else
 					states="ACGT";
 				for(int st = 0;st < stateFreqs.size();st++){
@@ -2080,16 +2054,16 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 	//assert(el.size() == 400);
 	//first make a full 20x20 matrix
 	assert(modSpec.IsAminoAcid());
-	vector<FLOAT_TYPE> el(nstates * nstates, ZERO_POINT_ZERO);
+	vector<FLOAT_TYPE> el(400, ZERO_POINT_ZERO);
 	vector<FLOAT_TYPE *>::iterator r = relNucRates.begin();
 	FLOAT_TYPE tot = ZERO_POINT_ZERO;
-	for(int from=0;from<nstates;from++){
-		for(int to=from;to<nstates;to++){
+	for(int from=0;from<20;from++){
+		for(int to=from;to<20;to++){
 			if(from == to)
-				el[from * nstates + to] = 0.0;
+				el[from * 20 + to] = 0.0;
 			else{
-				el[from * nstates + to] = **r;
-				el[to * nstates + from] = **r;
+				el[from * 20 + to] = **r;
+				el[to * 20 + from] = **r;
 				tot += **r;
 				r++;
 				}
@@ -2128,38 +2102,27 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 	out << "begin garli;" << endl;
 	out << "[this specifies an amino acid rate matrix, with AA's ordered alphabetically by SINGLE LETTER CODE]" << endl;
 	out << "[it is the above diagonal portion of the matrix, in order across each row]" << endl;
-	if(modSpec.fixStateFreqs == false && modSpec.IsEqualStateFrequencies() == false && modSpec.IsEmpiricalStateFrequencies() == false)
-		out << "[below the rate matrix is a line begining with \"e\" that specifies the estimated AA frequencies in GARLI format]" << endl;
-
 	out << "r ";
 	
-	FLOAT_TYPE scaleTo = 100.0 * ((nstates * nstates) - nstates)/2.0;
-
-	for(int from=0;from<nstates - 1;from++){
-		for(int to=from+1;to<nstates;to++){
-			sprintf(str, "%.5g", (el[from * nstates + to] * (scaleTo/tot)));
+	for(int from=0;from<19;from++){
+		for(int to=from+1;to<20;to++){
+			sprintf(str, "%.3f", (el[from * 20 + to] * (19000.0/tot)));
 			out << str << " ";
-			}
-		if(modSpec.fixStateFreqs == false && modSpec.IsEqualStateFrequencies() == false && modSpec.IsEmpiricalStateFrequencies() == false){
-			out << "\ne ";
-			for(int st = 0;st < nstates;st++)
-				out << StateFreq(st) << " ";
 			}
 		}
 	out << ";\nend;\n" << endl;
 
-	//21st state is extra serine
-	int corThree[21] = {0, 14, 11, 2, 1, 13, 3, 5, 6, 7, 9, 8, 10, 4, 12, 15, 16, 18, 19, 17, 20};
-	int corFull[21] =  {0, 14, 11, 2, 1, 3, 13, 5, 6, 7, 9, 8, 10, 4, 12, 15, 16, 18, 19, 17, 20};
+	int corThree[20] = {0, 14, 11, 2, 1, 13, 3, 5, 6, 7, 9, 8, 10, 4, 12, 15, 16, 18, 19, 17};
+	int corFull[20] =  {0, 14, 11, 2, 1, 3, 13, 5, 6, 7, 9, 8, 10, 4, 12, 15, 16, 18, 19, 17};
 
 	out << "This is the SINGLE LETTER order (GARLI), above diagonal matrix\n" << endl;
 	out << "(this is what appears in the above GARLI block)\n";
-	for(int from=0;from<nstates - 1;from++){
-		for(int to=0;to<nstates;to++){
+	for(int from=0;from<19;from++){
+		for(int to=0;to<20;to++){
 			if(to <= from)
 				out << "\t";
 			else{
-				sprintf(str, "%.5g", (el[from * nstates + to] * (scaleTo/tot)));
+				sprintf(str, "%.3f", (el[from * 20 + to] * (19000.0/tot)));
 				out << str;
 				if(to != from -1)
 					out << "\t";
@@ -2171,9 +2134,9 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 
 	out << "\nThis is the SINGLE LETTER order (GARLI) below diagonal matrix\n" << endl;
 
-	for(int from=1;from<nstates;from++){
+	for(int from=1;from<20;from++){
 		for(int to=0;to<from;to++){
-			sprintf(str, "%.5g", (el[from * nstates + to] * (scaleTo/tot)));
+			sprintf(str, "%.3f", (el[from * 20 + to] * (19000.0/tot)));
 			out << str;
 			if(to != from -1)
 				out << "\t";
@@ -2184,12 +2147,12 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 
 	out << "This is the THREE LETTER code order (PAML) above diagonal matrix\n" << endl;
 	//above diagonal
-	for(int from=0;from<nstates - 1;from++){
-		for(int to=0;to<nstates;to++){
+	for(int from=0;from<19;from++){
+		for(int to=0;to<20;to++){
 			if(to <= from)
 				out << "\t";
 			else{
-				sprintf(str, "%.5g", (el[corThree[from] * nstates + corThree[to]] * (scaleTo/tot)));
+				sprintf(str, "%.3f", (el[corThree[from] * 20 + corThree[to]] * (19000.0/tot)));
 				out << str;
 				if(to != from -1)
 					out << "\t";
@@ -2201,9 +2164,9 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 
 	out << "\nThis is the THREE LETTER order (PAML), below diagonal matrix\n" << endl;
 
-	for(int from=1;from<nstates;from++){
+	for(int from=1;from<20;from++){
 		for(int to=0;to<from;to++){
-			sprintf(str, "%.5g", (el[corThree[from] * nstates + corThree[to]] * (scaleTo/tot)));
+			sprintf(str, "%.3f", (el[corThree[from] * 20 + corThree[to]] * (19000.0/tot)));
 			out << str;
 			if(to != from -1)
 				out << "\t";
@@ -2214,12 +2177,12 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 
 	out << "This is the FULL NAME code order (MrBayes) above diagonal matrix\n" << endl;
 	//above diagonal
-	for(int from=0;from<nstates - 1;from++){
-		for(int to=0;to<nstates;to++){
+	for(int from=0;from<19;from++){
+		for(int to=0;to<20;to++){
 			if(to <= from)
 				out << "\t";
 			else{
-				sprintf(str, "%.5g", (el[corFull[from] * nstates + corFull[to]] * (scaleTo/tot)));
+				sprintf(str, "%.3f", (el[corFull[from] * 20 + corFull[to]] * (19000.0/tot)));
 				out << str;
 				if(to != from -1)
 					out << "\t";
@@ -2231,9 +2194,9 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 
 	out << "\nThis is the FULL NAME order (MrBayes), below diagonal matrix\n" << endl;
 
-	for(int from=1;from<nstates;from++){
+	for(int from=1;from<20;from++){
 		for(int to=0;to<from;to++){
-			sprintf(str, "%.5g", (el[corFull[from] * nstates + corFull[to]] * (scaleTo/tot)));
+			sprintf(str, "%.3f", (el[corFull[from] * 20 + corFull[to]] * (19000.0/tot)));
 			out << str;
 			if(to != from -1)
 				out << "\t";
@@ -2244,10 +2207,8 @@ void Model::OutputAminoAcidRMatrixArray(ostream &out){
 
 	
 	out << "These are AA frequencies that were used, which may have been estimated or not." << endl;
-	//Z is the extra serine
-	string states="ACDEFGHIKLMNPQRSTVWYZ";
+	string states="ACDEFGHIKLMNPQRSTVWY";
 	out << "Single letter order" << endl;
-	out.precision(5); 
 	for(int st = 0;st < stateFreqs.size();st++){
 		out << states[st] << "\t";
 		}
@@ -2275,12 +2236,8 @@ void Model::OutputHumanReadableModelReportWithParams() const{
 		else if(modSpec.IsInvertMitoCode()) outman.UserMessage("  Number of states = 62 (codon data, invertebrate mitochondrial code)");
 		else outman.UserMessage("  Number of states = 61 (codon data, standard code)");
 		}
-	else if(modSpec.IsAminoAcid()){
-		if(modSpec.nstates == 20)
-			outman.UserMessage("  Number of states = 20 (amino acid data)");
-		else if(modSpec.nstates == 21)
-			outman.UserMessage("  Number of states = 21 (amino acid data, experimental matrix with two serine types)");
-		}
+	else if(modSpec.IsAminoAcid())
+		outman.UserMessage("  Number of states = 20 (amino acid data)");
 	else 
 		outman.UserMessage("  Number of states = 4 (nucleotide data)");
 	
@@ -2317,8 +2274,6 @@ void Model::OutputHumanReadableModelReportWithParams() const{
 		else if(modSpec.IsMtRevAAMatrix()) outman.UserMessage("MtRev");
 		else if(modSpec.IsEstimateAAMatrix()) outman.UserMessage("Estimated (189 free parameters)");
 		else if(modSpec.IsUserSpecifiedRateMatrix()) outman.UserMessage(" values specified by user (fixed)");
-		else if(modSpec.IsTwoSerineRateMatrix() && !modSpec.fixRelativeRates) outman.UserMessage("Experimental model with two serine types\n    Matrix estimated (209 free parameters)");
-		else if(modSpec.IsTwoSerineRateMatrix()) outman.UserMessage("Experimental model with two serine types\n    Matrix specified by user.");
 		}
 
 	outman.UserMessageNoCR("  Equilibrium State Frequencies: ");
@@ -2349,8 +2304,7 @@ void Model::OutputHumanReadableModelReportWithParams() const{
 		
 	if(!modSpec.IsEqualStateFrequencies()){
 		if(modSpec.IsCodon())  outman.UserMessageNoCR("    (AAA, AAC, AAG, AAT, ACA, ... etc)\n    ");
-		else if(modSpec.IsAminoAcid() && !modSpec.IsTwoSerineRateMatrix()) outman.UserMessageNoCR("    (ACDEFGHIKLMNPQRSTVWY)\n    ");
-		else if(modSpec.IsAminoAcid() && modSpec.IsTwoSerineRateMatrix()) outman.UserMessageNoCR("    (ACDEFGHIKLMNPQRSTVWYZ) (Z=ACG and AGT Serines)\n    ");
+		else if(modSpec.IsAminoAcid()) outman.UserMessageNoCR("    (ACDEFGHIKLMNPQRSTVWY)\n    ");
 		else outman.UserMessageNoCR("    (ACGT) ");
 		for(int i=0;i<nstates;i++){
 			outman.UserMessageNoCR("%.4f ", StateFreq(i));
@@ -2418,7 +2372,7 @@ void Model::FillGarliFormattedModelString(string &s) const{
 			s += temp;
 			}
 		}
-	if(modSpec.IsAminoAcid() == false || modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix() || (modSpec.IsAminoAcid() && modSpec.IsUserSpecifiedRateMatrix())){
+	if(modSpec.IsAminoAcid() == false || modSpec.IsEstimateAAMatrix() || (modSpec.IsAminoAcid() && modSpec.IsUserSpecifiedRateMatrix())){
 		//sprintf(temp," r %.*f %.*f %.*f %.*f %.*f", prec, Rates(0), prec, Rates(1), prec, Rates(2), prec, Rates(3), prec, Rates(4));
 		//s += temp;
 		s += " r ";
@@ -2512,7 +2466,7 @@ void Model::ReadGarliFormattedModelString(string &modString){
 	do{//read parameter values identified by single letter identifier.  Each section should
 		//take care of advancing to the following letter 
 		if(c == 'R' || c == 'r'){//rate parameters
-			if(modSpec.IsAminoAcid() && modSpec.IsEstimateAAMatrix() == false && modSpec.IsUserSpecifiedRateMatrix() == false && modSpec.IsTwoSerineRateMatrix() == false) 
+			if(modSpec.IsAminoAcid() && modSpec.IsEstimateAAMatrix() == false && modSpec.IsUserSpecifiedRateMatrix() == false) 
 				throw ErrorException("Amino acid rate matrix parameters cannot be specified unless \"ratematrix = fixed\" or \"ratematrix = estimate\" are used.");
 			//FLOAT_TYPE r[6];
 			vector<FLOAT_TYPE> r;
@@ -2907,15 +2861,13 @@ void Model::CreateModelFromSpecification(int modnum){
 				relNucRates.push_back(a);
 			}
 		}
-	else{//estimating or fixing the aminoacid rate matrix - a two serine matrix is either estimated or fixed and user specified, so goes through here regardless
-		if(modSpec.fixRelativeRates == false || modSpec.IsUserSpecifiedRateMatrix() || modSpec.IsTwoSerineRateMatrix()){
+	else{//estimating or fixing the aminoacid rate matrix
+		if(modSpec.fixRelativeRates == false || modSpec.IsUserSpecifiedRateMatrix()){
 			int seed = rnd.seed();
-			int matrixRates = nstates * (nstates - 1) / 2;
-			//for(int i=0;i<190;i++){
-			for(int i=0;i < matrixRates;i++){
+			for(int i=0;i<190;i++){
 				FLOAT_TYPE *d=new FLOAT_TYPE;
 				//*d = ONE_POINT_ZERO;
-				if(i == (matrixRates - 1))
+				if(i == 189)
 					*d = 1.0;
 				else
 					*d = max(rnd.gamma(1), MIN_REL_RATE);
@@ -2925,14 +2877,14 @@ void Model::CreateModelFromSpecification(int modnum){
 #ifdef SUM_AA_REL_RATES	
 			this->NormalizeSumConstrainedRelativeRates(true, -1);
 #endif
-			if((modSpec.IsUserSpecifiedRateMatrix() == false) && ((modSpec.IsTwoSerineRateMatrix() &&  modSpec.fixRelativeRates) == false)){
+			if(! modSpec.IsUserSpecifiedRateMatrix()){
 #ifdef SUM_AA_REL_RATES
-				SumConstrainedRelativeRates *r = new SumConstrainedRelativeRates("Rate matrix", &relNucRates[0], matrixRates, SUM_TO * 1.0e-6/(double)matrixRates, SUM_TO * 1.0e6/(double)matrixRates, SUM_TO);
+				SumConstrainedRelativeRates *r = new SumConstrainedRelativeRates("Rate matrix", &relNucRates[0], 190, SUM_TO * 1.0e-6/190.0, SUM_TO * 1.0e6/190.0, SUM_TO);
 #else
 				RelativeRates *r=new RelativeRates("Rate matrix", &relNucRates[0], 190, 1e-3, 9999.9);
 #endif
 				
-				r->SetWeight(matrixRates);
+				r->SetWeight(190);
 				paramsToMutate.push_back(r);
 				}
 			}
@@ -3243,9 +3195,9 @@ void Model::OutputBinaryFormattedModel(OUTPUT_CLASS &out) const{
 
 void Model::OutputBinaryFormattedModel(OUTPUT_CLASS &out) const{
 	FLOAT_TYPE *r = new FLOAT_TYPE;
-	if(modSpec.IsAminoAcid() == false || modSpec.IsUserSpecifiedRateMatrix() || modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix()){
+	if(modSpec.IsAminoAcid() == false || modSpec.IsUserSpecifiedRateMatrix() || modSpec.IsEstimateAAMatrix()){
 		if(modSpec.IsAminoAcid())
-			assert(NumRelRates() == 190 || NumRelRates() == 210);
+			assert(NumRelRates() == 190);
 		else
 			assert(NumRelRates() == 6);
 		for(int i=0;i<NumRelRates();i++){
@@ -3287,9 +3239,9 @@ void Model::OutputBinaryFormattedModel(OUTPUT_CLASS &out) const{
 	}
 
 void Model::ReadBinaryFormattedModel(FILE *in){
-	if(modSpec.IsAminoAcid() == false || modSpec.IsUserSpecifiedRateMatrix() || modSpec.IsEstimateAAMatrix() || modSpec.IsTwoSerineRateMatrix()){
+	if(modSpec.IsAminoAcid() == false || modSpec.IsUserSpecifiedRateMatrix() || modSpec.IsEstimateAAMatrix()){
 		if(modSpec.IsAminoAcid())
-			assert(NumRelRates() == 190 || NumRelRates() == 210);
+			assert(NumRelRates() == 190);
 		else
 			assert(NumRelRates() == 6);
 		FLOAT_TYPE *r = new FLOAT_TYPE[NumRelRates()];
