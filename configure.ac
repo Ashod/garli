@@ -332,8 +332,6 @@ else
 	LDFLAGS="$LDFLAGS -L$NCL_LIB_DIR"
 fi
 
-LIBS="$LIBS -lncl"
-
 AC_TRY_LINK(
 [],
 [int foo=2;],
@@ -344,6 +342,7 @@ LIBS=$LIBS
 LDFLAGS=$LDFLAGS
 ])])
 
+LIBS="$LIBS -lncl"
 AC_TRY_LINK( 
 [#include "ncl/nxsdefs.h" ], 
 [onlyDefinedInCouldBeConst ();], 

@@ -98,12 +98,9 @@ void ClaManager::RecycleClas(){
 				numReclaimed++;
 				}
 			}
-		if(memLevel < 2) 
-			if(numReclaimed > 50) 
-				return;
+		if(memLevel<2) if(numReclaimed>50) return;
 		}
-	if(numReclaimed > 10) 
-		return;
+	if(numReclaimed>10) return;
 	for(int i=0;i<numHolders;i++){
 		if(holders[i].theSet != NULL){
 			if((holders[i].GetReclaimLevel() == 1 && holders[i].tempReserved == false && holders[i].reserved == false)){
@@ -113,16 +110,10 @@ void ClaManager::RecycleClas(){
 				numReclaimed++;
 				}
 			}
-		if(numReclaimed == 20) 
-			return;
+		if(numReclaimed==20) return;
 		}
 	if(numReclaimed==0){
-		//I changed this for some reason in r1030 (April 7, 2011, which means that it was in the 2.0 release) to the ErrorException, 
-		//which I should not have.  Throwing 2 will dirty the entire tree, which needs to happen in some cases when there are too many
-		//CLAs in use during blen opt and certain memlevels are in effect. The error throw was causing it to bail when it shouldn't have.  
-		//Reverting this June 15, 2011
 		throw(2);
-		//throw ErrorException("Ran out of conditional likelihood arrays. This should not really happen, but try increasing availablememory setting");
 		}
 	assert(numReclaimed > 0);
 	}
@@ -137,7 +128,7 @@ void CondLikeArraySet::Allocate() {
 		rawAllocation = new FLOAT_TYPE[size];
 		}
 	catch(std::bad_alloc){
-		throw ErrorException("Problem allocating cond. likelihood array (len = %d). Out of mem?\n\tNote: to use > 4GB of memory, you will need a 64-bit version of GARLI.", size);
+		throw ErrorException("Problem allocating cond. likelihood array (len = %d). Out of mem?", size);
 		}
 	try{
 		rawUnder = new int[usize];
